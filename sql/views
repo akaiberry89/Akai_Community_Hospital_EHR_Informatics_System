@@ -1,0 +1,30 @@
+-- ============================================================================
+-- VIEW 001: Order Provider Status
+-- PURPOSE:
+-- Provides a business-friendly view of laboratory orders,
+-- patient demographics, and provider assignment status.
+--
+-- BUSINESS VALUE:
+-- Highlights orders that may not yet have an ordering provider
+-- assigned and presents patient information in a readable format.
+--
+-- SKILLS:
+-- CREATE VIEW
+-- INNER JOIN
+-- CONCAT
+-- COALESCE
+-- Clinical Workflow Reporting
+-- ============================================================================
+CREATE VIEW vw_order_provider_status AS
+SELECT
+    o.order_id,
+    p.mrn,
+    CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+    o.order_datetime,
+    COALESCE(
+        o.ordering_provider,
+        'PENDING PROVIDER SIGNATURE'
+    ) AS ordering_provider
+FROM orders o
+JOIN patients p
+    ON p.patient_id = o.patient_id;
