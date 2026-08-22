@@ -164,6 +164,10 @@ def main():
             for _ in range(num_orders):
                 total_orders_created += 1
                 acc_num = f"ACC{fake.unique.random_number(digits=10, fix_len=True)}"
+                
+                # Simulate unsigned or incomplete orders.
+                # Approximately 10% of orders will not yet have
+                # an ordering provider assigned.
                 provider = (
                     None
                     if random.random() < 0.10
