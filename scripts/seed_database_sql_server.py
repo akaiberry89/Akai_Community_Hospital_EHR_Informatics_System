@@ -164,7 +164,11 @@ def main():
             for _ in range(num_orders):
                 total_orders_created += 1
                 acc_num = f"ACC{fake.unique.random_number(digits=10, fix_len=True)}"
-                provider = f"Dr. {fake.last_name()}"
+                provider = (
+                    None
+                    if random.random() < 0.10
+                    else f"Dr. {fake.last_name()}"
+                )
                 order_time = make_aware(fake.date_time_between(start_date='-30d', end_date='now'))
                 
                 cur.execute(
