@@ -24,6 +24,14 @@
 - [ ] Review normalization opportunities
 - [ ] Add more realistic workflow statuses
 - [ ] Expand specimen lifecycle tracking
+- [ ] Generate multiple specimen types
+  - Blood
+  - Urine
+  - Serum
+  - Plasma
+  - CSF
+  - Sputum
+- [ ] Create realistic specimen type distribution
 
 ### HL7 Enhancements
 
