@@ -24,6 +24,20 @@
 - [ ] Review normalization opportunities
 - [ ] Add more realistic workflow statuses
 - [ ] Expand specimen lifecycle tracking
+
+#### Specimen Workflow Enhancements
+
+- [ ] Add `uncollected` specimen status
+- [ ] Model label-printing workflow prior to specimen collection
+- [ ] Simulate specimen lifecycle:
+  - Uncollected
+  - Collected
+  - Received
+  - Rejected
+  - Resulted
+
+#### Specimen Data Realism
+
 - [ ] Generate multiple specimen types
   - Blood
   - Urine
