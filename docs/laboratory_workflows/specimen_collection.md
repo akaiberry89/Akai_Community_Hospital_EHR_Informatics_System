@@ -22,6 +22,7 @@ This workflow describes how a specimen enters the laboratory system.
 
 ## Database Workflow Mapping
 
+```text
 Patient
     ↓
 Order Created
