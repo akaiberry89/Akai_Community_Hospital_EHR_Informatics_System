@@ -31,7 +31,7 @@ Specimen Label Generated
     ↓
 Specimen Collected
     ↓
-Specimen Received
+Specimen Received & Accessioned
     ↓
 Laboratory Testing
     ↓
