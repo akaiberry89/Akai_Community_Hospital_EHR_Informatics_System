@@ -10,16 +10,28 @@ This workflow describes how a specimen enters the laboratory system.
 
 2. Patient arrives for collection.
 
-3. Phlebotomist or MLT/MLS collects specimen.
+3. Specimen label is generated and printed.
 
-4. Specimen receives a label.
+4. Phlebotomist or MLT/MLS collects specimen.
 
-5. Specimen is matched to the patient.
+5. Specimen is verified against patient identity and order information.
 
 6. Specimen is transported to the laboratory.
 
-## Related Tables
+7. Specimen is received and accessioned.
 
-- patients
-- orders
-- specimens
+## Database Workflow Mapping
+
+Patient
+    ↓
+Order Created
+    ↓
+Specimen Label Generated
+    ↓
+Specimen Collected
+    ↓
+Specimen Received
+    ↓
+Laboratory Testing
+    ↓
+Result Reported
