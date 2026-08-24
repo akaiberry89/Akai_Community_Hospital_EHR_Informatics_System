@@ -10,6 +10,10 @@ Akai Community Hospital EHR & Informatics System is an end-to-end Laboratory Inf
 
 ---
 
+## 🏗️ Entity Relationship Diagram
+
+docs/erd/akai_erd_v1.png
+
 ## 🗺️ Curriculum Mapping & Architecture Deliverables
 
 ### Phase 1: HL7 Interface Engineering & Logic Validation (INFM 109 & SDEV 120)
