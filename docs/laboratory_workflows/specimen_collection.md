@@ -36,3 +36,37 @@ Specimen Received & Accessioned
 Laboratory Testing
     ↓
 Result Reported
+```
+
+## Related Tables
+
+- patients
+- orders
+- specimens
+
+## Future Workflow Enhancements
+
+- [ ] Add `uncollected` specimen status
+- [ ] Model label-printing workflow prior to specimen collection
+- [ ] Expand specimen lifecycle tracking
+- [ ] Differentiate collection time from laboratory receipt time
+
+### Future Workflow Concept
+
+```text
+Patient
+    ↓
+Order Created
+    ↓
+Specimen Label Generated
+    ↓
+Uncollected
+    ↓
+Specimen Collected
+    ↓
+Specimen Received & Accessioned
+    ↓
+Laboratory Testing
+    ↓
+Result Reported
+```
