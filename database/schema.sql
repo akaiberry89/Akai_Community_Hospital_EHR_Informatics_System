@@ -51,7 +51,7 @@ CREATE TABLE specimens (
   specimen_id SERIAL PRIMARY KEY,
   order_id INT NOT NULL REFERENCES orders(order_id),
   accession_number VARCHAR(64) UNIQUE NOT NULL,
-  specimen_type VARCHAR(64), -- e.g., blood, urine
+  specimen_type VARCHAR(64) NOT NULL, -- e.g., blood, urine
   collection_datetime TIMESTAMPTZ,
   received_datetime TIMESTAMPTZ,
   rejection_reason TEXT, -- NULL if not rejected
