@@ -192,12 +192,19 @@ def main():
                 is_rejected = random.random() < 0.10
                 rejection_reason = random.choice(rejection_reasons) if is_rejected else None
                 
+                # Choose a randomized specimen type with weights (blood more common)
+                specimen_type = random.choices(
+                    ['blood', 'urine', 'serum', 'plasma'],
+                    weights=[70, 20, 7, 3],
+                    k=1
+                )[0]
+                
                 cur.execute(
                     """
                     INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, received_datetime, rejection_reason) 
                     OUTPUT inserted.specimen_id VALUES (?, ?, ?, ?, ?, ?);
                     """,
-                    (order_id, acc_num, 'blood', coll_time, rec_time, rejection_reason),
+                    (order_id, acc_num, specimen_type, coll_time, rec_time, rejection_reason),
                 )
                 specimen_id = cur.fetchone()[0]
                 

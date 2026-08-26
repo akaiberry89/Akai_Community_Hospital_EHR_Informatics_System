@@ -197,13 +197,20 @@ def main():
                 coll_time = make_aware(order_time + timedelta(minutes=random.randint(15, 60)))
                 rec_time = make_aware(coll_time + timedelta(minutes=random.randint(30, 90)))
 
+                # Choose a randomized specimen type with weights (blood more common)
+                specimen_type = random.choices(
+                    ['blood', 'urine', 'serum', 'plasma'],
+                    weights=[70, 20, 7, 3],
+                    k=1
+                )[0]
+
                 is_rejected = random.random() < 0.10
                 rejection_reason = random.choice(rejection_reasons) if is_rejected else None
 
-                # Fixed: properly pass SQL and params as separate arguments
+                # Fixed: properly pass SQL and params as separate arguments and use randomized specimen_type
                 cur.execute(
                     "INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, received_datetime, rejection_reason) VALUES (%s, %s, %s, %s, %s, %s) RETURNING specimen_id;",
-                    (order_id, acc_num, 'blood', coll_time, rec_time, rejection_reason),
+                    (order_id, acc_num, specimen_type, coll_time, rec_time, rejection_reason),
                 )
                 specimen_id = cur.fetchone()[0]
 
