@@ -42,7 +42,7 @@ CREATE TABLE orders (
   patient_id INT NOT NULL REFERENCES patients(patient_id),
   ordering_provider VARCHAR(128),
   order_datetime TIMESTAMPTZ NOT NULL,
-  status VARCHAR(32) DEFAULT 'ordered' CHECK (status IN ('ordered', 'active', 'canceled')),
+  status VARCHAR(32) DEFAULT 'ordered' CHECK (status IN ('ordered', 'active', 'received', 'completed', 'canceled')),
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -61,7 +61,7 @@ CREATE TABLE specimens (
 
 -- LOINC mapping / lookup master directory
 CREATE TABLE loinc_map (
-  loinc_code VARCHAR(32) PRIMARY KEY,
+  loinc_code VARCHAR(32) PRIMARY KEY CHECK (loinc_code = UPPER(loinc_code)),
   test_name TEXT NOT NULL,
   units TEXT,
   ref_range TEXT
@@ -73,8 +73,10 @@ CREATE TABLE lab_results (
   specimen_id INT NOT NULL REFERENCES specimens(specimen_id),
   
   -- Relational key linked directly to loinc_map(loinc_code)
-  loinc_code VARCHAR(32) NOT NULL REFERENCES loinc_map(loinc_code), 
+  loinc_code VARCHAR(32) NOT NULL CHECK (loinc_code = UPPER(loinc_code)) REFERENCES loinc_map(loinc_code), 
   
+  status VARCHAR(32) DEFAULT 'final' CHECK (status IN ('preliminary', 'final', 'corrected', 'amended')),
+
   result_value TEXT,
   result_flag VARCHAR(16) CHECK (result_flag IN ('normal', 'abnormal', 'critical')),
   result_datetime TIMESTAMPTZ, -- when result finalized
