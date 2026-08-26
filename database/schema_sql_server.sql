@@ -63,7 +63,7 @@ CREATE TABLE specimens (
     specimen_id INT IDENTITY(1,1) PRIMARY KEY,
     order_id INT NOT NULL REFERENCES orders(order_id),
     accession_number VARCHAR(64) UNIQUE NOT NULL,
-    specimen_type VARCHAR(64), -- e.g., blood, urine
+    specimen_type VARCHAR(64) NOT NULL, -- e.g., blood, urine
     collection_datetime DATETIMEOFFSET,
     received_datetime DATETIMEOFFSET,
     rejection_reason VARCHAR(MAX), -- Replaced TEXT with VARCHAR(MAX)
