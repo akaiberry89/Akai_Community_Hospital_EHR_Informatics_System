@@ -34,7 +34,6 @@
   - Collected
   - Received
   - Rejected
-  - Resulted
 
 #### Specimen Data Realism
 
