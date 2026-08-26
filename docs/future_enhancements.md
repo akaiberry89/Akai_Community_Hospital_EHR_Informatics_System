@@ -38,14 +38,17 @@
 
 #### Specimen Data Realism
 
-- [ ] Generate multiple specimen types
+- [x] Generate multiple specimen types
   - Blood
   - Urine
   - Serum
   - Plasma
+- [x] Create realistic specimen type distribution
+- [ ] Expand specimen type catalog
   - CSF
   - Sputum
-- [ ] Create realistic specimen type distribution
+  - Stool
+  - Tissue
 
 ### HL7 Enhancements
 
