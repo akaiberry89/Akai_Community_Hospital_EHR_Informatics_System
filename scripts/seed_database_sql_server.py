@@ -233,7 +233,7 @@ def main():
 
                         # Rule-based flag logic for Glucose vs. random for other tests             
                         numeric_value = random.randint(65,180)
-                        result_value = str(numeric_val)
+                        result_value = str(numeric_value)
 
                         if numeric_value > 170:
                             flag = 'critical'
