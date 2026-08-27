@@ -73,7 +73,7 @@ CREATE TABLE specimens (
 
 -- LOINC mapping / lookup master directory
 CREATE TABLE loinc_map (
-    loinc_code VARCHAR(32) PRIMARY KEY CHECK (loinc_code = UPPER(loinc_code)),
+    loinc_code VARCHAR(32) PRIMARY KEY,
     test_name VARCHAR(255) NOT NULL, -- Specified length constraint for compatibility
     units VARCHAR(64),
     ref_range VARCHAR(64)
@@ -83,7 +83,7 @@ CREATE TABLE loinc_map (
 CREATE TABLE lab_results (
     result_id INT IDENTITY(1,1) PRIMARY KEY,
     specimen_id INT NOT NULL REFERENCES specimens(specimen_id),
-    loinc_code VARCHAR(32) NOT NULL CHECK (loinc_code = UPPER(loinc_code)) REFERENCES loinc_map(loinc_code),
+    loinc_code VARCHAR(32) NOT NULL REFERENCES loinc_map(loinc_code),
     status VARCHAR(32) DEFAULT 'final' CHECK (status IN ('preliminary', 'final', 'corrected', 'amended')),
     result_value VARCHAR(MAX), -- Replaced TEXT with VARCHAR(MAX)
     result_flag VARCHAR(16) CHECK (result_flag IN ('normal', 'abnormal', 'critical')),

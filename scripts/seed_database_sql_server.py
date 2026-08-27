@@ -153,7 +153,6 @@ def main():
         logging.info("Seeded patients (%d)", len(patient_ids))
 
         # 4) Seed orders, specimens, lab_results (Controlled by --max-orders)
-        flags = ['normal', 'normal', 'normal', 'abnormal', 'critical']
         rejection_reasons = [
             'Hemolyzed', 'Quantity Not Sufficient (QNS)', 'Unlabeled Specimen', 'Incorrect Container Type', 'Clotted Specimen'
         ]
@@ -246,8 +245,8 @@ def main():
 
                         result_value = str(round(random.uniform(3.5, 18.0), 1))
 
-                        flag = random.choices(
-                            ['normal', 'normal', 'normal', 'abnormal',], 
+                        flag = random.choice(
+                            ['normal', 'normal', 'normal', 'abnormal'], 
                         )                   
                        
                     result_time = make_aware(rec_time + timedelta(minutes=random.randint(45, 120)))

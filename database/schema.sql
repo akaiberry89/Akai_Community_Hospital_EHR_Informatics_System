@@ -61,7 +61,7 @@ CREATE TABLE specimens (
 
 -- LOINC mapping / lookup master directory
 CREATE TABLE loinc_map (
-  loinc_code VARCHAR(32) PRIMARY KEY CHECK (loinc_code = UPPER(loinc_code)),
+  loinc_code VARCHAR(32) PRIMARY KEY,
   test_name TEXT NOT NULL,
   units TEXT,
   ref_range TEXT
@@ -73,7 +73,7 @@ CREATE TABLE lab_results (
   specimen_id INT NOT NULL REFERENCES specimens(specimen_id),
   
   -- Relational key linked directly to loinc_map(loinc_code)
-  loinc_code VARCHAR(32) NOT NULL CHECK (loinc_code = UPPER(loinc_code)) REFERENCES loinc_map(loinc_code), 
+  loinc_code VARCHAR(32) NOT NULL REFERENCES loinc_map(loinc_code), 
   
   status VARCHAR(32) DEFAULT 'final' CHECK (status IN ('preliminary', 'final', 'corrected', 'amended')),
 
