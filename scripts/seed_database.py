@@ -236,10 +236,20 @@ def main():
                     loinc = random.choice(loinc_data)
                     flag = random.choice(flags)
 
+                    # Rule-based flag logic for Glucose vs. random for other tests
                     if loinc[0] == '2345-7':
-                        result_value = str(random.randint(65, 180))
+                        numeric_value = random.randint(65, 180)
+                        result_value = str(numeric_val)
+
+                        if numeric_value > 170:
+                            flag = 'critical'
+                        elif numeric_value > 140:
+                            flag = 'abnormal'
+                        else:
+                            flag = 'normal'
                     else:
                         result_value = str(round(random.uniform(3.5, 18.0), 1))
+                        flag = random.choice(['normal', 'normal', 'abnormal'])
 
                     result_time = make_aware(rec_time + timedelta(minutes=random.randint(45, 120)))
 
@@ -248,10 +258,10 @@ def main():
                     # Updated: Normalized SQL insert matches your new schema
                     cur.execute(
                         """INSERT INTO lab_results (
-                            specimen_id, loinc_code, result_value, 
+                            specimen_id, loinc_code, status, result_value, 
                             result_flag, result_datetime, reported_datetime
-                        ) VALUES (%s, %s, %s, %s, %s, %s) RETURNING result_id;""",
-                        (specimen_id, loinc[0], result_value, flag, result_time, result_time),
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING result_id;""",
+                        (specimen_id, loinc[0], result_status, result_value, flag, result_time, result_time),
                     )
                     result_id = cur.fetchone()[0]
 

@@ -231,12 +231,13 @@ def main():
                     
                     if loinc[0] == '2345-7':
 
-                        numeric_val = random.randint(65,180)
+                        # Rule-based flag logic for Glucose vs. random for other tests             
+                        numeric_value = random.randint(65,180)
                         result_value = str(numeric_val)
 
-                        if numeric_val > 170:
+                        if numeric_value > 170:
                             flag = 'critical'
-                        elif numeric_val > 140:
+                        elif numeric_value > 140:
                             flag = 'abnormal'
                         else:
                             flag = 'normal'
@@ -255,10 +256,10 @@ def main():
                     
                     cur.execute(
                         """
-                        INSERT INTO lab_results (specimen_id, loinc_code, result_value, result_flag, status, result_datetime, reported_datetime) 
+                        INSERT INTO lab_results (specimen_id, loinc_code, status, result_value, result_flag, result_datetime, reported_datetime) 
                         OUTPUT inserted.result_id VALUES (?, ?, ?, ?, ?, ?, ?);
                         """,
-                        (specimen_id, loinc[0], result_value, flag, result_status, result_time, result_time),
+                        (specimen_id, loinc[0], result_value, result_status, flag, result_status, result_time, result_time),
                     )
                     result_id = cur.fetchone()[0]
                     
