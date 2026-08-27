@@ -157,6 +157,17 @@ def main():
         rejection_reasons = [
             'Hemolyzed', 'Quantity Not Sufficient (QNS)', 'Unlabeled Specimen', 'Incorrect Container Type', 'Clotted Specimen'
         ]
+
+        status_options = [
+            'completed',
+            'ordered',
+            'received',
+            'active',
+            'canceled',
+]
+
+        status_weights = [70, 15, 8, 5, 2]
+
         total_orders_created = 0
         
         for p_id in patient_ids:
@@ -174,10 +185,12 @@ def main():
                     else f"Dr. {fake.last_name()}"
                 )
                 order_time = make_aware(fake.date_time_between(start_date='-30d', end_date='now'))
+
+                order_status = random.choices(status_options, weights=status_weights, k=1)[0]
                 
                 cur.execute(
                     "INSERT INTO orders (patient_id, ordering_provider, order_datetime, status) OUTPUT inserted.order_id VALUES (?, ?, ?, ?);",
-                    (p_id, provider, order_time, 'ordered'),
+                    (p_id, provider, order_time, order_status),
                 )
                 order_id = cur.fetchone()[0]
                 
@@ -216,19 +229,37 @@ def main():
                 
                 if not is_rejected:
                     loinc = random.choice(loinc_data)
-                    flag = random.choice(flags)
+                    
                     if loinc[0] == '2345-7':
-                        result_value = str(random.randint(65, 180))
+
+                        numeric_val = random.randint(65,180)
+                        result_value = str(numeric_val)
+
+                        if numeric_val > 170:
+                            flag = 'critical'
+                        elif numeric_val > 140:
+                            flag = 'abnormal'
+                        else:
+                            flag = 'normal'
+
                     else:
+
                         result_value = str(round(random.uniform(3.5, 18.0), 1))
+
+                        flag = random.choices(
+                            ['normal', 'normal', 'normal', 'abnormal',], 
+                        )                   
+                       
                     result_time = make_aware(rec_time + timedelta(minutes=random.randint(45, 120)))
+
+                    result_status = ('preliminary' if order_status == 'received' else 'final')
                     
                     cur.execute(
                         """
-                        INSERT INTO lab_results (specimen_id, loinc_code, result_value, result_flag, result_datetime, reported_datetime) 
-                        OUTPUT inserted.result_id VALUES (?, ?, ?, ?, ?, ?);
+                        INSERT INTO lab_results (specimen_id, loinc_code, result_value, result_flag, status, result_datetime, reported_datetime) 
+                        OUTPUT inserted.result_id VALUES (?, ?, ?, ?, ?, ?, ?);
                         """,
-                        (specimen_id, loinc[0], result_value, flag, result_time, result_time),
+                        (specimen_id, loinc[0], result_value, flag, result_status, result_time, result_time),
                     )
                     result_id = cur.fetchone()[0]
                     

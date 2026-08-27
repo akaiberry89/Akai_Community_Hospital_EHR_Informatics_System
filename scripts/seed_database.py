@@ -167,6 +167,17 @@ def main():
             'Clotted Specimen'
         ]
 
+        status_options = [
+            'completed',
+            'ordered',
+            'received',
+            'active',
+            'canceled',
+        ]
+
+        status_weights = [70, 15, 8, 5, 2]  # Weighted probabilities for status selection
+        
+
         total_orders_created = 0
         for p_id in patient_ids:
             num_orders = random.randint(1, max(1, args.max_orders))
@@ -184,9 +195,11 @@ def main():
                 )
                 order_time = make_aware(fake.date_time_between(start_date='-30d', end_date='now'))
 
+                order_status = random.choices(status_options, weights=status_weights, k=1)[0]
+                
                 cur.execute(
                     "INSERT INTO orders (patient_id, ordering_provider, order_datetime, status) VALUES (%s, %s, %s, %s) RETURNING order_id;",
-                    (p_id, provider, order_time, 'ordered'),
+                    (p_id, provider, order_time, order_status),
                 )
                 order_id = cur.fetchone()[0]
                 cur.execute(
@@ -229,6 +242,8 @@ def main():
                         result_value = str(round(random.uniform(3.5, 18.0), 1))
 
                     result_time = make_aware(rec_time + timedelta(minutes=random.randint(45, 120)))
+
+                    result_status = ('preliminary' if order_status == 'received' else 'final')
 
                     # Updated: Normalized SQL insert matches your new schema
                     cur.execute(
