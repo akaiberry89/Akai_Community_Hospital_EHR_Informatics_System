@@ -173,7 +173,6 @@ def main():
             num_orders = random.randint(1, max(1, args.max_orders))
             for _ in range(num_orders):
                 total_orders_created += 1
-                acc_num = f"ACC{fake.unique.random_number(digits=10, fix_len=True)}"
                 
                 # Simulate unsigned or incomplete orders.
                 # Approximately 10% of orders will not yet have
@@ -198,76 +197,86 @@ def main():
                     "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
                     (random.choice(user_ids), 'orders', order_id, 'create', audit_detail),
                 )
-                
-                coll_time = make_aware(order_time + timedelta(minutes=random.randint(15, 60)))
-                rec_time = make_aware(coll_time + timedelta(minutes=random.randint(30, 90)))
-                is_rejected = random.random() < 0.10
-                rejection_reason = random.choice(rejection_reasons) if is_rejected else None
-                
-                # Choose a randomized specimen type with weights (blood more common)
-                specimen_type = random.choices(
-                    ['blood', 'urine', 'serum', 'plasma'],
-                    weights=[70, 20, 7, 3],
+
+                num_specimens = random.choices(
+                    [1, 2, 3],
+                    weights=[70, 20, 10],
                     k=1
                 )[0]
+
+                for _ in range(num_specimens):
+                    acc_num = f"ACC{fake.unique.random_number(digits=10, fix_len=True)}"
                 
-                cur.execute(
-                    """
-                    INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, received_datetime, rejection_reason) 
-                    OUTPUT inserted.specimen_id VALUES (?, ?, ?, ?, ?, ?);
-                    """,
-                    (order_id, acc_num, specimen_type, coll_time, rec_time, rejection_reason),
-                )
-                specimen_id = cur.fetchone()[0]
+                    coll_time = make_aware(order_time + timedelta(minutes=random.randint(15, 60)))
+                    rec_time = make_aware(coll_time + timedelta(minutes=random.randint(30, 90)))
+                    accessioned_time = make_aware(rec_time + timedelta(minutes=random.randint(1, 10)))
+                    is_rejected = random.random() < 0.10
+                    rejection_reason = random.choice(rejection_reasons) if is_rejected else None
                 
-                audit_detail = json.dumps({'order_id': order_id, 'accession_number': acc_num, 'rejection_reason': rejection_reason})
-                cur.execute(
-                    "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
-                    (random.choice(user_ids), 'specimens', specimen_id, 'create', audit_detail),
-                )
+                    # Choose a randomized specimen type with weights (blood more common)
+                    specimen_type = random.choices(
+                        ['blood', 'urine', 'serum', 'plasma'],
+                        weights=[70, 20, 7, 3],
+                        k=1
+                    )[0]
                 
-                if not is_rejected:
-                    loinc = random.choice(loinc_data)
-                    
-                    if loinc[0] == '2345-7':
-
-                        # Rule-based flag logic for Glucose vs. random for other tests             
-                        numeric_value = random.randint(65,180)
-                        result_value = str(numeric_value)
-
-                        if numeric_value > 170:
-                            flag = 'critical'
-                        elif numeric_value > 140:
-                            flag = 'abnormal'
-                        else:
-                            flag = 'normal'
-
-                    else:
-
-                        result_value = str(round(random.uniform(3.5, 18.0), 1))
-
-                        flag = random.choice(
-                            ['normal', 'normal', 'normal', 'abnormal'], 
-                        )                   
-                       
-                    result_time = make_aware(rec_time + timedelta(minutes=random.randint(45, 120)))
-
-                    result_status = ('preliminary' if order_status == 'received' else 'final')
-                    
                     cur.execute(
                         """
-                        INSERT INTO lab_results (specimen_id, loinc_code, status, result_value, result_flag, result_datetime, reported_datetime) 
-                        OUTPUT inserted.result_id VALUES (?, ?, ?, ?, ?, ?, ?);
+                        INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, received_datetime, accessioned_datetime, rejection_reason) 
+                        OUTPUT inserted.specimen_id VALUES (?, ?, ?, ?, ?, ?, ?);
                         """,
-                        (specimen_id, loinc[0], result_value, result_status, flag, result_status, result_time, result_time),
+                        (order_id, acc_num, specimen_type, coll_time, rec_time, accessioned_time, rejection_reason),
                     )
-                    result_id = cur.fetchone()[0]
-                    
-                    audit_detail = json.dumps({'specimen_id': specimen_id, 'loinc_code': loinc[0], 'value': result_value})
+                    specimen_id = cur.fetchone()[0]
+                
+                    audit_detail = json.dumps({'order_id': order_id, 'accession_number': acc_num, 'rejection_reason': rejection_reason})
                     cur.execute(
                         "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
-                        (random.choice(user_ids), 'lab_results', result_id, 'create', audit_detail),
+                        (random.choice(user_ids), 'specimens', specimen_id, 'create', audit_detail),
                     )
+                
+                    if not is_rejected:
+                        loinc = random.choice(loinc_data)
+                    
+                        if loinc[0] == '2345-7':
+
+                            # Rule-based flag logic for Glucose vs. random for other tests             
+                            numeric_value = random.randint(65,180)
+                            result_value = str(numeric_value)
+
+                            if numeric_value > 170:
+                                flag = 'critical'
+                            elif numeric_value > 140:
+                                flag = 'abnormal'
+                            else:
+                                flag = 'normal'
+
+                        else:
+
+                            result_value = str(round(random.uniform(3.5, 18.0), 1))
+
+                            flag = random.choice(
+                                ['normal', 'normal', 'normal', 'abnormal'], 
+                            )                   
+                       
+                        result_time = make_aware(accessioned_time + timedelta(minutes=random.randint(45, 120)))
+
+                        result_status = ('preliminary' if order_status == 'received' else 'final')
+                    
+                        cur.execute(
+                            """
+                            INSERT INTO lab_results (specimen_id, loinc_code, status, result_value, result_flag, result_datetime, reported_datetime) 
+                            OUTPUT inserted.result_id VALUES (?, ?, ?, ?, ?, ?, ?);
+                            """,
+                            (specimen_id, loinc[0], result_status, result_value, flag, result_time, result_time),
+                        )
+                        result_id = cur.fetchone()[0]
+                    
+                        audit_detail = json.dumps({'specimen_id': specimen_id, 'loinc_code': loinc[0], 'value': result_value})
+                        cur.execute(
+                            "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
+                            (random.choice(user_ids), 'lab_results', result_id, 'create', audit_detail),
+                        )
                     
         logging.info("Seeded orders, specimens, and lab_results (%d orders total)", total_orders_created)
         conn.commit()

@@ -183,7 +183,6 @@ def main():
             num_orders = random.randint(1, max(1, args.max_orders))
             for _ in range(num_orders):
                 total_orders_created += 1
-                acc_num = f"ACC{fake.unique.random_number(digits=10, fix_len=True)}"
                 
                 # Simulate unsigned or incomplete orders.
                 # Approximately 10% of orders will not yet have
@@ -207,68 +206,81 @@ def main():
                     (random.choice(user_ids), 'orders', order_id, 'create', extras.Json({'patient_id': p_id, 'ordering_provider': provider})),
                 )
 
-                coll_time = make_aware(order_time + timedelta(minutes=random.randint(15, 60)))
-                rec_time = make_aware(coll_time + timedelta(minutes=random.randint(30, 90)))
-
-                # Choose a randomized specimen type with weights (blood more common)
-                specimen_type = random.choices(
-                    ['blood', 'urine', 'serum', 'plasma'],
-                    weights=[70, 20, 7, 3],
+                num_specimens = random.choices(
+                    [1, 2, 3],
+                    weights=[70, 20, 10],
                     k=1
-                )[0]
+                ) [0]
 
-                is_rejected = random.random() < 0.10
-                rejection_reason = random.choice(rejection_reasons) if is_rejected else None
+                for _ in range(num_specimens):
 
-                # Fixed: properly pass SQL and params as separate arguments and use randomized specimen_type
-                cur.execute(
-                    "INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, received_datetime, rejection_reason) VALUES (%s, %s, %s, %s, %s, %s) RETURNING specimen_id;",
-                    (order_id, acc_num, specimen_type, coll_time, rec_time, rejection_reason),
-                )
-                specimen_id = cur.fetchone()[0]
 
-                cur.execute(
-                    "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
-                    (random.choice(user_ids), 'specimens', specimen_id, 'create', extras.Json({'order_id': order_id, 'accession_number': acc_num, 'rejection_reason': rejection_reason})),
-                )
+                    coll_time = make_aware(order_time + timedelta(minutes=random.randint(15, 60)))
+                    rec_time = make_aware(coll_time + timedelta(minutes=random.randint(30, 90)))
+                    accessioned_time = make_aware(rec_time + timedelta(minutes=random.randint(1, 10)))
 
-                if not is_rejected:
-                    loinc = random.choice(loinc_data)
-                    flag = random.choice(flags)
+                    # Specimen arrives in lab and gets accessioned
+                    acc_num = f"ACC{fake.unique.random_number(digits=10, fix_len=True)}"
 
-                    # Rule-based flag logic for Glucose vs. random for other tests
-                    if loinc[0] == '2345-7':
-                        numeric_value = random.randint(65, 180)
-                        result_value = str(numeric_value)
+                    # Choose a randomized specimen type with weights (blood more common)
+                    specimen_type = random.choices(
+                        ['blood', 'urine', 'serum', 'plasma'],
+                        weights=[70, 20, 7, 3],
+                        k=1
+                    )[0]
 
-                        if numeric_value > 170:
-                            flag = 'critical'
-                        elif numeric_value > 140:
-                            flag = 'abnormal'
-                        else:
-                            flag = 'normal'
-                    else:
-                        result_value = str(round(random.uniform(3.5, 18.0), 1))
-                        flag = random.choice(['normal', 'normal', 'abnormal'])
+                    is_rejected = random.random() < 0.10
+                    rejection_reason = random.choice(rejection_reasons) if is_rejected else None
 
-                    result_time = make_aware(rec_time + timedelta(minutes=random.randint(45, 120)))
-
-                    result_status = ('preliminary' if order_status == 'received' else 'final')
-
-                    # Updated: Normalized SQL insert matches your new schema
+                    # Fixed: properly pass SQL and params as separate arguments and use randomized specimen_type
                     cur.execute(
-                        """INSERT INTO lab_results (
-                            specimen_id, loinc_code, status, result_value, 
-                            result_flag, result_datetime, reported_datetime
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING result_id;""",
-                        (specimen_id, loinc[0], result_status, result_value, flag, result_time, result_time),
+                        "INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, received_datetime, accessioned_datetime, rejection_reason) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING specimen_id;",
+                        (order_id, acc_num, specimen_type, coll_time, rec_time, accessioned_time, rejection_reason)
                     )
-                    result_id = cur.fetchone()[0]
+                    specimen_id = cur.fetchone()[0]
 
                     cur.execute(
                         "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
-                        (random.choice(user_ids), 'lab_results', result_id, 'create', extras.Json({'specimen_id': specimen_id, 'loinc_code': loinc[0], 'value': result_value})),
+                        (random.choice(user_ids), 'specimens', specimen_id, 'create', extras.Json({'order_id': order_id, 'accession_number': acc_num, 'rejection_reason': rejection_reason})),
                     )
+
+                    if not is_rejected:
+                        loinc = random.choice(loinc_data)
+                        flag = random.choice(flags)
+
+                        # Rule-based flag logic for Glucose vs. random for other tests
+                        if loinc[0] == '2345-7':
+                            numeric_value = random.randint(65, 180)
+                            result_value = str(numeric_value)
+
+                            if numeric_value > 170:
+                                flag = 'critical'
+                            elif numeric_value > 140:
+                                flag = 'abnormal'
+                            else:
+                                flag = 'normal'
+                        else:
+                            result_value = str(round(random.uniform(3.5, 18.0), 1))
+                            flag = random.choice(['normal', 'normal', 'abnormal'])
+
+                        result_time = make_aware(accessioned_time + timedelta(minutes=random.randint(45, 120)))
+
+                        result_status = ('preliminary' if order_status == 'received' else 'final')
+
+                        # Updated: Normalized SQL insert matches your new schema
+                        cur.execute(
+                            """INSERT INTO lab_results (
+                                specimen_id, loinc_code, status, result_value, 
+                                result_flag, result_datetime, reported_datetime
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING result_id;""",
+                            (specimen_id, loinc[0], result_status, result_value, flag, result_time, result_time),
+                        )
+                        result_id = cur.fetchone()[0]
+
+                        cur.execute(
+                            "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
+                            (random.choice(user_ids), 'lab_results', result_id, 'create', extras.Json({'specimen_id': specimen_id, 'loinc_code': loinc[0], 'value': result_value})),
+                        )
 
         logging.info("Seeded orders, specimens, and lab_results (%d orders total)", total_orders_created)
 
