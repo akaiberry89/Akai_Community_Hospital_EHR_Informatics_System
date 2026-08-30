@@ -20,10 +20,10 @@
 
 ### Database Enhancements
 
-- [ ] Investigate additional indexes for reporting queries
+- [x] Investigate additional indexes for reporting queries
 - [ ] Review normalization opportunities
 - [ ] Add more realistic workflow statuses
-- [ ] Expand specimen lifecycle tracking
+- [x] Expand specimen lifecycle tracking (Collected, Received > Collected, Received, Accessioned)
 
 #### Specimen Workflow Enhancements
 
@@ -34,6 +34,8 @@
   - Collected
   - Received
   - Rejected
+- [x] Add accessioning step
+- [x] Support multiple specimens per order
 
 #### Specimen Data Realism
 
