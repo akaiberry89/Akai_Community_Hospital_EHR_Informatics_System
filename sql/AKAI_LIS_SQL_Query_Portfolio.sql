@@ -131,3 +131,42 @@ GROUP BY
     p.first_name,
     p.last_name
 ORDER BY total_orders DESC;
+
+-- ============================================================================
+-- QUERY 008: Identifying High-Volume Patients Through Order and Specimen Analysis
+-- BUSINESS QUESTION: 
+-- The Laboratory Director wants a report showing:
+        Patient full name
+        MRN
+        Total number of orders
+        Total number of specimens
+        Only include patients who have:
+        More specimens than orders
+        Sort by:
+        Largest difference between specimen count and order count
+        Then highest specimen count
+        Return one row per patient.
+
+-- SKILLS:
+-- SELECT
+-- JOIN
+-- GROUP BY
+-- HAVING
+-- ORDER BY
+-- Aggregate functions
+
+SELECT
+	CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+	p.mrn,
+	COUNT(DISTINCT o.order_id) AS total_number_of_orders,
+	COUNT(s.specimen_id) AS total_number_of_specimens
+FROM specimens s
+JOIN orders o
+	ON s.order_id = o.order_id
+JOIN patients p
+	ON o.patient_id = p.patient_id
+GROUP BY p.patient_id
+HAVING COUNT(s.specimen_id) > COUNT(DISTINCT o.order_id)
+ORDER BY 
+	(COUNT(s.specimen_id) - COUNT(DISTINCT o.order_id)) DESC,
+	total_number_of_specimens DESC;            
