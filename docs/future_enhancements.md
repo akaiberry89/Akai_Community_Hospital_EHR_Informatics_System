@@ -36,6 +36,7 @@
   - Rejected
 - [x] Add accessioning step
 - [x] Support multiple specimens per order
+- [ ] Simulate workflow delays for accessioning and result reporting analytics
 
 #### Specimen Data Realism
 
