@@ -7,40 +7,7 @@
 -- ============================================================================
 
 -- ============================================================================
--- QUERY 001: Rejected Specimen Count
--- BUSINESS QUESTION:
--- How many specimens were rejected?
-
-SELECT COUNT(*)
-FROM specimens
-WHERE rejection_reason IS NOT NULL;
-
--- ============================================================================
--- QUERY 002: Rejection Reason Summary
--- BUSINESS QUESTION:
--- How many specimens were rejected for each reason?
-
-SELECT
-    rejection_reason,
-    COUNT(rejection_reason) AS rejection_count
-FROM specimens
-WHERE rejection_reason IS NOT NULL
-GROUP BY rejection_reason;
-
--- ============================================================================
--- QUERY 003: Provider Order Volume
--- BUSINESS QUESTION:
--- How many orders has each provider placed?
-
-SELECT
-    ordering_provider,
-    COUNT(order_id) AS total_orders
-FROM orders
-GROUP BY ordering_provider
-ORDER BY total_orders DESC;
-
--- ============================================================================
--- QUERY 004: Rejected Specimen Investigation
+-- QUERY 001: Rejected Specimen Investigation
 -- BUSINESS QUESTION:
 -- Which patients had a rejected specimen and why was it rejected?
 --
@@ -64,7 +31,7 @@ WHERE s.rejection_reason IS NOT NULL
 ORDER BY s.accession_number ASC;
 
 -- ============================================================================
--- QUERY 005: Human-Readable Laboratory Results
+-- QUERY 002: Human-Readable Laboratory Results
 -- BUSINESS QUESTION:
 -- Show laboratory results using human-readable test name rather than LOINC code.
 --
@@ -83,7 +50,7 @@ JOIN loinc_map lm
     ON lr.loinc_code = lm.loinc_code;
 
 -- ============================================================================
--- QUERY 006: Patient Laboratory Result Report
+-- QUERY 003: Patient Laboratory Result Report
 -- BUSINESS QUESTION:
 -- Show patient names, test names, and laboratory result values.
 --
@@ -109,7 +76,7 @@ JOIN loinc_map lm
     ON lr.loinc_code = lm.loinc_code;
 
 -- ============================================================================
--- QUERY 007: Patient Order Volume Report
+-- QUERY 004: Patient Order Volume Report
 -- BUSINESS QUESTION:
 -- How many lab orders has each patient received?
 --
@@ -133,7 +100,7 @@ GROUP BY
 ORDER BY total_orders DESC;
 
 -- ============================================================================
--- QUERY 008: Identifying High-Volume Patients Through Order and Specimen Analysis
+-- QUERY 005: Identifying High-Volume Patients Through Order and Specimen Analysis
 -- BUSINESS QUESTION: 
 -- The Laboratory Director wants a report showing:
         Patient full name
@@ -172,7 +139,7 @@ ORDER BY
 	total_number_of_specimens DESC;   
 
 -- ============================================================================
--- QUERY 009: Identifying patients who have received the same test multiple times
+-- QUERY 006: Identifying patients who have received the same test multiple times
 -- BUSINESS QUESTION: 
 -- "Can you help me identify patients who appear to be receiving the same test more than once so we can review whether the repeat testing was clinically necessary?"
 
