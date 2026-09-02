@@ -169,4 +169,29 @@ GROUP BY p.patient_id
 HAVING COUNT(s.specimen_id) > COUNT(DISTINCT o.order_id)
 ORDER BY 
 	(COUNT(s.specimen_id) - COUNT(DISTINCT o.order_id)) DESC,
-	total_number_of_specimens DESC;            
+	total_number_of_specimens DESC;   
+
+-- ============================================================================
+-- QUERY 009: Identifying patients who have received the same test multiple times
+-- BUSINESS QUESTION: 
+-- "Can you help me identify patients who appear to be receiving the same test more than once so we can review whether the repeat testing was clinically necessary?"
+
+SELECT
+	p.patient_id,
+	CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+	lr.loinc_code,
+	COUNT(lr.loinc_code) AS test_count
+FROM lab_results lr
+JOIN specimens s
+	ON lr.specimen_id = s.specimen_id
+JOIN orders o
+	ON s.order_id = o.order_id
+JOIN patients p 
+	ON o.patient_id = p.patient_id
+GROUP BY 
+	p.patient_id,
+	p.first_name,
+	p.last_name,
+	lr.loinc_code
+HAVING COUNT(lr.loinc_code) > 1
+ORDER BY test_count DESC;
