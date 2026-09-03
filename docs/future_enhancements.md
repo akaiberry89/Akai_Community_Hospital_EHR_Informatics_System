@@ -38,13 +38,14 @@ Bear with me as I learn how to translate what I've seen in the laboratory into h
 
 #### Specimen Workflow Enhancements
 
-- [ ] Add `uncollected` specimen status
+- [ ] Evaluate adding specimen status field versus deriving workflow state from timestamps
 - [ ] Model label-printing workflow prior to specimen collection
-- [ ] Simulate specimen lifecycle:
-  - Uncollected
+- [ ] Expand specimen lifecycle simulation
+  - Ordered but not yet collected
   - Collected
   - Received
   - Rejected
+  - Accessioned
 - [x] Add accessioning step
 - [x] Support multiple specimens per order
 - [ ] Simulate workflow delays for accessioning and result reporting analytics
