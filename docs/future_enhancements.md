@@ -34,6 +34,7 @@ Bear with me as I learn how to translate what I've seen in the laboratory into h
 - [ ] Review normalization opportunities
 - [ ] Add more realistic workflow statuses
 - [x] Expand specimen lifecycle tracking (Collected, Received > Collected, Received, Accessioned)
+- [ ] Add `ordered_tests` table to model test requests independently from laboratory results
 
 #### Specimen Workflow Enhancements
 
