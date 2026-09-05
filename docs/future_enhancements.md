@@ -85,6 +85,15 @@ Bear with me as I learn how to translate what I've seen in the laboratory into h
 - [ ] Create workflow diagrams
 - [ ] Write database architecture overview
 
+### DBA Toolkit
+
+- [ ] Create reusable DBA query library (I really love `UNION ALL` and `Scalar Subqueries`)
+  - Table row counts
+  - Data quality checks
+  - Metadata exploration
+  - Duplicate detection queries
+  - Null value audits
+
 ### Learning Topics
 
 - [ ] Revisit `information_schema`
