@@ -12,7 +12,7 @@ Akai Community Hospital EHR & Informatics System is an end-to-end Laboratory Inf
 
 ## 🏗️ Entity Relationship Diagram (V1)
 
-![AKAI Community Hospital ERD](docs/erd/akai_erd_v1.png)
+![AKAI Community Hospital ERD](docs/erd/akai_erd_v2.png)
 
 ## 🗺️ Curriculum Mapping & Architecture Deliverables
 
