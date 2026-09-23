@@ -162,3 +162,34 @@ GROUP BY
 	lr.loinc_code
 HAVING COUNT(lr.loinc_code) > 1
 ORDER BY test_count DESC;
+
+-- ============================================================================
+-- QUERY 007: Database Completeness and Row Count Audit
+-- BUSINESS QUESTION: 
+-- "How can we verify that our database seeding script completed successfully and ensure that the core relational tables contain all expected records across our clinical workflows?"
+
+SELECT 
+	'patients' AS table_name, 
+	COUNT(*) AS total_rows
+FROM patients
+
+UNION ALL
+
+SELECT 
+	'orders', 
+	COUNT(*)
+FROM orders
+
+UNION ALL
+
+SELECT 
+	'specimens', 
+	COUNT(*)
+FROM specimens
+
+UNION ALL
+
+SELECT 
+	'lab_results', 
+	COUNT(*)
+FROM lab_results;
