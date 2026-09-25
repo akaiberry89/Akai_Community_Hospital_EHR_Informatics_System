@@ -24,6 +24,14 @@ Akai Community Hospital EHR & Informatics System is an end-to-end Laboratory Inf
 * **Core Question:** *How are complex laboratory master files, specimen records, and clinical dictionaries structured to ensure data integrity?*
 * **What I'm Building:** Normalized PostgreSQL database schema managing `Patients`, `Specimens`, `Orders`, and `LOINC_Map` `Lab_Results`, and audit logging for clinical data integrity.
 
+#### 🏥 Infrastructure & Cost Optimization Strategy (Broadcom/VMware Alignment)
+
+* **Context:** Following Broadcom’s acquisition of VMware, enterprise software licensing shifted from a flat **per-socket** model to a strict **per-core subscription** model. For a mid-sized healthcare system like Akai Community Hospital, this infrastructure change represents a projected **300% spike** in baseline operating costs for virtualized backend server environments.
+* **Project Impact:** Because the Akai Laboratory Information System (LIS) database processes high-volume transactional data, inefficient queries directly translate to high CPU core utilization, driving up licensing expenses. To combat this, this schema is engineered with defensive database optimization strategies.
+* **Strategic Indexing:** Tables like `lab_results` utilize localized index layers (`idx_results_flag`, `idx_results_loinc_code`) to drastically compress query search times.
+* **Compute Footprint Reduction:** By ensuring high-speed data retrieval at the database level, the system minimizes the processing burden on the underlying virtual machines. 
+* **Business Outcome:** This design allows the hospital to safely scale down its required cluster core allocation, protecting the IT budget from licensing inflation while preserving 99.99% database availability for critical clinical workflows.
+
 ### Phase 3: Security, Audit & Compliance (HIMT 104 & CSIA 105)
 * **Core Question:** *How is patient data secured and audited for HIPAA compliance?*
 * **What I'm Building:** Role-Based Access Control (RBAC) concepts and `audit_log` architecture designed to support HIPAA-aligned monitoring of Protected Health Information (PHI).
