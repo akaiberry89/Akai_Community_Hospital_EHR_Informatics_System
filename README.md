@@ -36,6 +36,14 @@ Akai Community Hospital EHR & Informatics System is an end-to-end Laboratory Inf
 * **Core Question:** *How is patient data secured and audited for HIPAA compliance?*
 * **What I'm Building:** Role-Based Access Control (RBAC) concepts and `audit_log` architecture designed to support HIPAA-aligned monitoring of Protected Health Information (PHI).
 
+#### 🛡️ Platform Migration Security & Data Sovereignty
+
+* **Context:** Migrating core clinical systems away from legacy virtualization providers to alternative platforms requires strict data sovereignty safeguards. Moving live patient data between server clusters introduces severe vectors for unauthorized data exposure and operational disruptions.
+* **Project Impact:** To protect patient data during infrastructure transformations, the Akai LIS incorporates defensive auditing mechanisms directly within the transaction pipeline.
+* **Granular Audit Logging:** The `audit_log` table captures precise user context, specific action states (`create`, `read`, `update`, `delete`), and structural mutations utilizing structural JSONB data objects.
+* **Data Integrity Enforcement:** Relational foreign keys and schema-level validation constraints guarantee that patient records, specimens, and laboratory results maintain strict data alignment, preventing data corruption during unexpected server failovers.
+* **Business Outcome:** This strategy enforces continuous compliance with HIPAA Security Rules during architectural data transfers, ensuring that patient tracking and privacy baselines remain uninterrupted during critical IT operational changes
+
 ### Phase 4: Clinical Systems Reporting & Performance Analytics (INFM 219 & CPIN 269)
 * **Core Question:** *How does data drive operational efficiency and patient outcomes?*
 * **What I'm Building:** Power BI executive dashboards tracking laboratory turnaround times (TAT), specimen rejection rates, and critical flag alerts.
