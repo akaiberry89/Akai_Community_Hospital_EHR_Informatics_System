@@ -10,7 +10,19 @@ Akai Community Hospital EHR & Informatics System is an end-to-end Laboratory Inf
 
 ---
 
-## 🏗️ Entity Relationship Diagram (V1)
+## 🚀 Live Portfolio Deployment
+
+An interactive, containerized version of this Laboratory Information System (LIS) application is deployed and hosted on **Streamlit Community Cloud**. 
+
+👉 **[Click Here to Launch the Live Interactive Dashboard](https://akaicommunityhospitalehrinformaticssystem-22hfgpri9pxankh9uqmj.streamlit.app/)**
+
+### 🎮 What You Can Do in the Live Cloud Demo:
+* **Interactive Registry:** Filter the active clinical worklist by Patient Last Name or Accession Number using parameterized SQL filters.
+* **HIPAA Compliance Audit Trail:** Navigate to the `audit_log` workspace to view immutable compliance logging rows generated in real-time by native database schema triggers.
+* **SQL Query Console Sandbox:** Execute raw, read-only SQL queries (`SELECT`, `JOIN`, `GROUP BY`) directly against the live database framework with built-in injection guardrails.
+
+
+## 🏗️ Entity Relationship Diagram (V2)
 
 ![AKAI Community Hospital ERD](docs/erd/akai_erd_v2.png)
 
