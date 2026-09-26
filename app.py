@@ -236,92 +236,76 @@ if criticals > 0:
 st.markdown("### 📊 Enterprise Ledger Workspace")
 
 # --- 4. NAVIGATION VIEW INTERFACES ---
-tab_registry, tab_audit, tab_query = st.tabs([
-    "📝 Clinical Order Registry", 
-    "🔒 Immutable HIPAA Audit Logs",
-    "💻 SQL Query Workspace"
+# Restructuring tabs to match your exact DDL schema tables and workflows
+tab_patients, tab_orders, tab_specimens, tab_results, tab_audit, tab_query = st.tabs([
+    "👤 patients Table", 
+    "📋 orders Table", 
+    "🧪 specimens Table", 
+    "🔬 lab_results Table",
+    "🔒 audit_log Table",
+    "💻 SQL Query Console"
 ])
 
-with tab_registry:
-    st.markdown("#### Active Clinical Patient Worklist")
+with tab_patients:
+    st.markdown("### 👤 patients Registry Table")
+    st.markdown("Raw transactional rows from the `patients` schema table, tracking MRNs and patient demographics.")
+    pats_df = pd.read_sql_query("SELECT patient_id, mrn, first_name, last_name, dob, sex, created_at FROM patients ORDER BY patient_id DESC", db_conn)
+    st.dataframe(pats_df, use_container_width=True, hide_index=True)
+
+with tab_orders:
+    st.markdown("### 📋 orders Transactional Table")
+    st.markdown("Tracks provider order requests mapped back to unique Patient IDs via foreign key constraints.")
+    orders_df = pd.read_sql_query("SELECT order_id, patient_id, ordering_provider, order_datetime, status FROM orders ORDER BY order_id DESC", db_conn)
+    st.dataframe(orders_df, use_container_width=True, hide_index=True)
+
+with tab_specimens:
+    st.markdown("### 🧪 specimens Tracking Table")
+    st.markdown("Logs physical sample status, processing benchmarks, and automated rejection flags.")
     
-    # Dynamic Search Filter Inputs
-    search_col1, search_col2 = st.columns(2)
-    search_name = search_col1.text_input("🔍 Search by Patient Last Name", "")
-    search_acc = search_col2.text_input("🆔 Search by Accession Number (e.g., ACC-100003)", "")
+    # 📈 Added an executive bar chart to track rejection rules visually
+    st.markdown("#### Turnaround Time Tracking by Specimen Type")
+    chart_df = pd.read_sql_query("""
+        SELECT s.specimen_type, COUNT(o.order_id) as total_volume
+        FROM specimens s
+        JOIN orders o ON s.order_id = o.order_id
+        GROUP BY s.specimen_type
+    """, db_conn)
+    st.bar_chart(data=chart_df, x="specimen_type", y="total_volume", color="#4b7eff")
     
-    registry_query = """
-        SELECT o.order_id, p.last_name || ', ' || p.first_name AS patient_name, 
-               s.accession_number, s.specimen_type, lm.test_name, r.result_value, r.result_flag, o.status
-        FROM orders o
-        JOIN patients p ON o.patient_id = p.patient_id
-        JOIN specimens s ON o.order_id = s.order_id
-        LEFT JOIN lab_results r ON s.specimen_id = r.specimen_id
-        LEFT JOIN loinc_map lm ON r.loinc_code = lm.loinc_code
-        WHERE 1=1
+    spec_df = pd.read_sql_query("SELECT specimen_id, order_id, accession_number, specimen_type, collection_datetime, rejection_reason FROM specimens ORDER BY specimen_id DESC", db_conn)
+    st.dataframe(spec_df, use_container_width=True, hide_index=True)
+
+with tab_results:
+    st.markdown("### 🔬 lab_results Structured View")
+    st.markdown("Normalized transactional data linked to standard LOINC master mapping protocols.")
+    res_query = """
+        SELECT r.result_id, r.specimen_id, lm.test_name, r.result_value, lm.units, lm.ref_range, r.result_flag, r.status
+        FROM lab_results r
+        JOIN loinc_map lm ON r.loinc_code = lm.loinc_code
+        ORDER BY r.result_id DESC
     """
-    
-    query_params = []
-    if search_name:
-        registry_query += " AND p.last_name LIKE ?"
-        query_params.append(f"%{search_name}%")
-    if search_acc:
-        registry_query += " AND s.accession_number = ?"
-        query_params.append(search_acc.strip())
-        
-    reg_df = pd.read_sql_query(registry_query, db_conn, params=query_params)
-    st.dataframe(
-        reg_df,
-        column_config={
-            "order_id": st.column_config.NumberColumn("Order ID"),
-            "patient_name": st.column_config.TextColumn("Patient Name"),
-            "accession_number": st.column_config.TextColumn("Accession Number"),
-            "specimen_type": st.column_config.TextColumn("Specimen Type"),
-            "test_name": st.column_config.TextColumn("Lab Panel Ordered"),
-            "result_value": st.column_config.TextColumn("Observed Value"),
-            "result_flag": st.column_config.TextColumn("Severity Flag"),
-            "status": st.column_config.TextColumn("Process Status")
-        },
-        use_container_width=True,
-        hide_index=True
-    )
+    res_df = pd.read_sql_query(res_query, db_conn)
+    st.dataframe(res_df, use_container_width=True, hide_index=True)
 
 with tab_audit:
-    st.markdown("#### HIPAA Audit Trail System Log (`audit_log`)")
-    st.warning("⚠️ **Compliance Assurance Tracker:** The entries below were generated automatically via native database trigger hooks when the synthetic pipeline executed inserts.")
-    
-    audit_df = pd.read_sql_query("SELECT audit_id, user_id, object_type, object_id, action, action_time FROM audit_log ORDER BY audit_id DESC", db_conn)
+    st.markdown("### 🔒 audit_log Compliance System Log")
+    st.info("Immutable Tracking Log: Captured natively via operational database triggers to guarantee absolute security monitoring.")
+    audit_df = pd.read_sql_query("SELECT audit_id, user_id, object_type, object_id, action, action_time, detail FROM audit_log ORDER BY audit_id DESC", db_conn)
     st.dataframe(audit_df, use_container_width=True, hide_index=True)
 
 with tab_query:
-    st.markdown("### 💻 Custom SQL Query Console")
+    st.markdown("### 💻 Enterprise SQL Sandbox Console")
     st.markdown("Type any standard SQLite query below to test the live schema tracking layers and press Execute.")
-
-    # 🗺️ Schema Data Map Cheat Sheet
-    with st.expander("🗺️ View Database Schema Cheat Sheet"):
-        st.code("""
-        patients    (patient_id, mrn, first_name, last_name, dob, sex)
-        orders      (order_id, patient_id, ordering_provider, status)
-        specimens   (specimen_id, order_id, accession_number, specimen_type)
-        lab_results (result_id, specimen_id, loinc_code, result_value, result_flag)
-        audit_log   (audit_id, user_id, object_type, object_id, action)
-        """)
     
-    # Open Text Box Input Window
     user_sql = st.text_area("SQL Terminal Input Workspace", value="SELECT * FROM patients LIMIT 5;")
     
     if st.button("Execute Query ⚡"):
-        # 1. Convert input to uppercase to catch 'drop', 'Drop', or 'DROP'
         sanitized_query = user_sql.upper()
-        
-        # 2. Establish a security boundary wall against dangerous data commands
         forbidden_keywords = ["DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "TRUNCATE"]
-        
-        # 3. Scan the query text for infractions
         contains_forbidden = any(keyword in sanitized_query for keyword in forbidden_keywords)
         
         if contains_forbidden:
-            st.error("🚨 Security Exception: Data Modification Commands (DDL/DML updates) are disabled. This terminal is strictly configuration locked to READ-ONLY (SELECT) operations.")
+            st.error("🚨 Security Exception: Data Modification Commands are disabled. This terminal is configuration locked to READ-ONLY (SELECT) operations.")
         else:
             try:
                 custom_df = pd.read_sql_query(user_sql, db_conn)
