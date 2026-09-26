@@ -1,3 +1,10 @@
+-- Clean up triggers and functions if rerun
+DROP TRIGGER IF EXISTS trg_audit_insert_patients ON patients;
+DROP TRIGGER IF EXISTS trg_audit_insert_orders ON orders;
+DROP TRIGGER IF EXISTS trg_audit_insert_specimens ON specimens;
+DROP TRIGGER IF EXISTS trg_audit_insert_results ON lab_results;
+DROP FUNCTION IF EXISTS log_clinical_inserts();
+
 -- Cleanup old indexes (safe to rerun)
 DROP INDEX IF EXISTS idx_orders_order_datetime;
 DROP INDEX IF EXISTS idx_orders_patient_id;
@@ -132,3 +139,47 @@ CREATE INDEX IF NOT EXISTS idx_results_loinc_code
 ON lab_results(loinc_code);
 CREATE INDEX IF NOT EXISTS idx_results_flag
 ON lab_results(result_flag);
+
+-- AUTOMATED HIPAA COMPLIANCE AUDIT TRIGGERS
+CREATE OR REPLACE FUNCTION log_clinical_inserts()
+RETURNS TRIGGER AS $$
+DECLARE
+    target_id INT;
+BEGIN
+    -- Determine the primary key dynamically based on the table firing the trigger
+    CASE TG_TABLE_NAME
+        WHEN 'patients'    THEN target_id := NEW.patient_id;
+        WHEN 'orders'      THEN target_id := NEW.order_id;
+        WHEN 'specimens'   THEN target_id := NEW.specimen_id;
+        WHEN 'lab_results' THEN target_id := NEW.result_id;
+        ELSE target_id := NULL;
+    END CASE;
+
+    -- Insert an immutable tracking row into the audit log mapped to User ID 1 (System Profile)
+    INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
+    VALUES (
+        1, -- Directly ties the background automation to the 'System Interface' account
+        TG_TABLE_NAME, 
+        target_id, 
+        'CREATE', 
+        jsonb_build_object(
+            'event_description', 'Record automatically provisioned via system process',
+            'record_snapshot', to_jsonb(NEW)
+        )
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Bind the triggers to operational tables
+CREATE TRIGGER trg_audit_insert_patients 
+AFTER INSERT ON patients FOR EACH ROW EXECUTE FUNCTION log_clinical_inserts();
+
+CREATE TRIGGER trg_audit_insert_orders 
+AFTER INSERT ON orders FOR EACH ROW EXECUTE FUNCTION log_clinical_inserts();
+
+CREATE TRIGGER trg_audit_insert_specimens 
+AFTER INSERT ON specimens FOR EACH ROW EXECUTE FUNCTION log_clinical_inserts();
+
+CREATE TRIGGER trg_audit_insert_results 
+AFTER INSERT ON lab_results FOR EACH ROW EXECUTE FUNCTION log_clinical_inserts();

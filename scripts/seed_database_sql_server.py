@@ -98,6 +98,20 @@ def main():
         # 2) Seed users
         user_ids = []
         if args.reset:
+            # Enforce core system profile first so it automatically takes User ID 1
+            cur.execute(
+                "INSERT INTO users (username, display_name, role) OUTPUT inserted.user_id VALUES (?, ?, ?);",
+                ('sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin'),
+            )
+            sys_uid = cur.fetchone()[0]
+            user_ids.append(sys_uid)
+            
+            sys_audit_detail = json.dumps({'username': 'sys_hl7_interface', 'role': 'admin'})
+            cur.execute(
+                "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
+                (sys_uid, 'users', sys_uid, 'create', sys_audit_detail),
+            )
+            
             roles = ['technician', 'clinician', 'admin']
             for _ in range(5):
                 username = f"user_{fake.user_name()}"
@@ -118,19 +132,27 @@ def main():
                 )
             logging.info("Seeded users (%d)", len(user_ids))
         else:
+            # Append mode safety: Ensure system user account exists at ID 1 if missing
+            cur.execute("SELECT user_id FROM users WHERE user_id = 1;")
+            if not cur.fetchone():
+                cur.execute(
+                    """
+                    IF NOT EXISTS (SELECT 1 FROM users WHERE user_id = 1)
+                    BEGIN
+                        SET IDENTITY_INSERT users ON;
+                        INSERT INTO users (user_id, username, display_name, role) VALUES (1, 'sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin');
+                        SET IDENTITY_INSERT users OFF;
+                    END
+                    """
+                )
+            
             cur.execute("SELECT user_id FROM users;")
             user_ids = [row[0] for row in cur.fetchall()]
-            
-            if not user_ids:
-                cur.execute(
-                    "INSERT INTO users (username, display_name, role) OUTPUT inserted.user_id VALUES (?, ?, ?);",
-                    ("sys_admin", "System Admin", "admin"),
-                )
-                user_ids.append(cur.fetchone()[0])
             logging.info("Loaded existing users for append mode (%d users available)", len(user_ids))
 
         # 3) Seed patients
         patient_ids = []
+        skipped_patients = 0
         for _ in range(args.patients):
             mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
             sex = random.choice(['M', 'F'])
@@ -138,18 +160,29 @@ def main():
             last_name = fake.last_name()
             dob = fake.date_of_birth(minimum_age=18, maximum_age=90).strftime('%Y-%m-%d')
             
-            cur.execute(
-                "INSERT INTO patients (mrn, first_name, last_name, dob, sex) OUTPUT inserted.patient_id VALUES (?, ?, ?, ?, ?);",
-                (mrn, first_name, last_name, dob, sex),
-            )
-            pid = cur.fetchone()[0]
-            patient_ids.append(pid)
+            # T-SQL Idempotent Check to safely handle append mode
+            tsql_query = """
+                IF NOT EXISTS (SELECT 1 FROM patients WHERE mrn = ?)
+                BEGIN
+                    INSERT INTO patients (mrn, first_name, last_name, dob, sex)
+                    OUTPUT inserted.patient_id
+                    VALUES (?, ?, ?, ?, ?);
+                END
+            """
+            cur.execute(tsql_query, (mrn, mrn, first_name, last_name, dob, sex))
+            result = cur.fetchone()
             
-            audit_detail = json.dumps({'mrn': mrn, 'name': f"{first_name} {last_name}"})
-            cur.execute(
-                "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
-                (random.choice(user_ids), 'patients', pid, 'create', audit_detail),
-            )
+            # If the database skipped the query because the MRN exists, result is None
+            if result is not None:
+                pid = result[0]
+                patient_ids.append(pid)
+            else:
+                skipped_patients += 1
+                
+            # The manual audit_log execution has been completely removed from here!
+
+        if skipped_patients > 0:
+            logging.info("SQL Server Idempotence: Safely bypassed %d pre-existing MRN records.", skipped_patients)
         logging.info("Seeded patients (%d)", len(patient_ids))
 
         # 4) Seed orders, specimens, lab_results (Controlled by --max-orders)
@@ -163,7 +196,7 @@ def main():
             'received',
             'active',
             'canceled',
-]
+        ]
 
         status_weights = [70, 15, 8, 5, 2]
 
@@ -191,12 +224,6 @@ def main():
                     (p_id, provider, order_time, order_status),
                 )
                 order_id = cur.fetchone()[0]
-                
-                audit_detail = json.dumps({'patient_id': p_id, 'ordering_provider': provider})
-                cur.execute(
-                    "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
-                    (random.choice(user_ids), 'orders', order_id, 'create', audit_detail),
-                )
 
                 num_specimens = random.choices(
                     [1, 2, 3],
@@ -229,19 +256,12 @@ def main():
                     )
                     specimen_id = cur.fetchone()[0]
                 
-                    audit_detail = json.dumps({'order_id': order_id, 'accession_number': acc_num, 'rejection_reason': rejection_reason})
-                    cur.execute(
-                        "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
-                        (random.choice(user_ids), 'specimens', specimen_id, 'create', audit_detail),
-                    )
-                
                     if not is_rejected:
                         loinc = random.choice(loinc_data)
                     
                         if loinc[0] == '2345-7':
-
                             # Rule-based flag logic for Glucose vs. random for other tests             
-                            numeric_value = random.randint(65,180)
+                            numeric_value = random.randint(65, 180)
                             result_value = str(numeric_value)
 
                             if numeric_value > 170:
@@ -250,17 +270,13 @@ def main():
                                 flag = 'abnormal'
                             else:
                                 flag = 'normal'
-
                         else:
-
                             result_value = str(round(random.uniform(3.5, 18.0), 1))
-
                             flag = random.choice(
-                                ['normal', 'normal', 'normal', 'abnormal'], 
+                                ['normal', 'normal', 'normal', 'abnormal'],
                             )                   
                        
                         result_time = make_aware(accessioned_time + timedelta(minutes=random.randint(45, 120)))
-
                         result_status = ('preliminary' if order_status == 'received' else 'final')
                     
                         cur.execute(
@@ -271,12 +287,6 @@ def main():
                             (specimen_id, loinc[0], result_status, result_value, flag, result_time, result_time),
                         )
                         result_id = cur.fetchone()[0]
-                    
-                        audit_detail = json.dumps({'specimen_id': specimen_id, 'loinc_code': loinc[0], 'value': result_value})
-                        cur.execute(
-                            "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (?, ?, ?, ?, ?);",
-                            (random.choice(user_ids), 'lab_results', result_id, 'create', audit_detail),
-                        )
                     
         logging.info("Seeded orders, specimens, and lab_results (%d orders total)", total_orders_created)
         conn.commit()

@@ -7,6 +7,13 @@
 --          Ensures exact logical parity with school systems.
 -- ============================================================================
 
+-- Clean up existing triggers if rerun
+IF OBJECT_ID('trg_MS_Audit_Patients', 'TR') IS NOT NULL DROP TRIGGER trg_MS_Audit_Patients;
+IF OBJECT_ID('trg_MS_Audit_Orders', 'TR') IS NOT NULL DROP TRIGGER trg_MS_Audit_Orders;
+IF OBJECT_ID('trg_MS_Audit_Specimens', 'TR') IS NOT NULL DROP TRIGGER trg_MS_Audit_Specimens;
+IF OBJECT_ID('trg_MS_Audit_Lab_Results', 'TR') IS NOT NULL DROP TRIGGER trg_MS_Audit_Lab_Results;
+GO
+
 -- Cleanup old indexes (safe to rerun)
 -- Note: SQL Server handles index dropping via 'DROP INDEX IF EXISTS index_name ON table_name'
 IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_orders_order_datetime') DROP INDEX idx_orders_order_datetime ON orders;
@@ -133,3 +140,44 @@ CREATE INDEX idx_specimens_order_id ON specimens(order_id);
 CREATE INDEX idx_results_result_datetime ON lab_results(result_datetime);
 CREATE INDEX idx_results_loinc_code ON lab_results(loinc_code);
 CREATE INDEX idx_results_flag ON lab_results(result_flag);
+
+-- AUTOMATED HIPAA COMPLIANCE AUDIT TRIGGERS
+CREATE TRIGGER trg_MS_Audit_Patients ON patients AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
+    SELECT 1, 'patients', i.patient_id, 'CREATE', (SELECT i.mrn, i.first_name, i.last_name, i.dob, i.sex FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+    FROM inserted i;
+END;
+GO
+
+CREATE TRIGGER trg_MS_Audit_Orders ON orders AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
+    SELECT 1, 'orders', i.order_id, 'CREATE', (SELECT i.patient_id, i.ordering_provider, i.status FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+    FROM inserted i;
+END;
+GO
+
+CREATE TRIGGER trg_MS_Audit_Specimens ON specimens AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
+    SELECT 1, 'specimens', i.specimen_id, 'CREATE', (SELECT i.order_id, i.accession_number, i.specimen_type, i.rejection_reason FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+    FROM inserted i;
+END;
+GO
+
+CREATE TRIGGER trg_MS_Audit_Lab_Results ON lab_results AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
+    SELECT 1, 'lab_results', i.result_id, 'CREATE', (SELECT i.specimen_id, i.loinc_code, i.result_value, i.result_flag FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+    FROM inserted i;
+END;
+GO

@@ -106,6 +106,18 @@ def main():
         # 2) Seed users
         user_ids = []
         if args.reset:
+            # Enforce core system profile first so it automatically takes User ID 1
+            cur.execute(
+                "INSERT INTO users (username, display_name, role) VALUES (%s, %s, %s) RETURNING user_id;",
+                ('sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin'),
+            )
+            sys_uid = cur.fetchone()[0]
+            user_ids.append(sys_uid)
+            cur.execute(
+                "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
+                (sys_uid, 'users', sys_uid, 'create', extras.Json({'username': 'sys_hl7_interface', 'role': 'admin'})),
+            )
+            
             roles = ['technician', 'clinician', 'admin']
             for _ in range(5):
                 username = f"user_{fake.user_name()}"
@@ -123,17 +135,17 @@ def main():
                 )
             logging.info("Seeded users (%d)", len(user_ids))
         else:
+            # Append mode safety: Ensure system user account exists at ID 1 if missing
+            cur.execute("SELECT user_id FROM users WHERE user_id = 1;")
+            if not cur.fetchone():
+                cur.execute(
+                    "INSERT INTO users (username, display_name, role) VALUES (%s, %s, %s);",
+                    ('sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin'),
+                )
+            
             # Fetch existing users from the database if not resetting
             cur.execute("SELECT user_id FROM users;")
             user_ids = [row[0] for row in cur.fetchall()]
-            
-            # Fallback safety: If table is empty, create one default user
-            if not user_ids:
-                cur.execute(
-                    "INSERT INTO users (username, display_name, role) VALUES (%s, %s, %s) RETURNING user_id;",
-                    ("sys_admin", "System Admin", "admin"),
-                )
-                user_ids.append(cur.fetchone()[0])
             logging.info("Loaded existing users for append mode (%d users available)", len(user_ids))
 
         # 3) Seed patients
@@ -145,16 +157,24 @@ def main():
             last_name = fake.last_name()
             dob = fake.date_of_birth(minimum_age=18, maximum_age=90)
 
+            # Change 1: Added ON CONFLICT clause
             cur.execute(
-                "INSERT INTO patients (mrn, first_name, last_name, dob, sex) VALUES (%s, %s, %s, %s, %s) RETURNING patient_id;",
+                "INSERT INTO patients (mrn, first_name, last_name, dob, sex) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (mrn) DO NOTHING RETURNING patient_id;",
                 (mrn, first_name, last_name, dob, sex),
             )
-            pid = cur.fetchone()[0]
-            patient_ids.append(pid)
-            cur.execute(
-                "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
-                (random.choice(user_ids), 'patients', pid, 'create', extras.Json({'mrn': mrn, 'name': f"{first_name} {last_name}"})),
-            )
+            result = cur.fetchone()
+            
+            # Change 3: Wrapped in an IF block to check for skipped duplicates
+            if result is not None:
+                pid = result[0]
+                patient_ids.append(pid)
+            else:
+                skipped_patients += 1
+            
+            # Change 2: The manual cur.execute for audit_log has been completely removed from here!
+
+        if skipped_patients > 0:
+            logging.info("Idempotent Pattern: Safely bypassed %d pre-existing patient rows.", skipped_patients)
         logging.info("Seeded patients (%d)", len(patient_ids))
 
         # 4) Seed orders, specimens, lab_results (Controlled by --max-orders)
@@ -201,11 +221,7 @@ def main():
                     (p_id, provider, order_time, order_status),
                 )
                 order_id = cur.fetchone()[0]
-                cur.execute(
-                    "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
-                    (random.choice(user_ids), 'orders', order_id, 'create', extras.Json({'patient_id': p_id, 'ordering_provider': provider})),
-                )
-
+                
                 num_specimens = random.choices(
                     [1, 2, 3],
                     weights=[70, 20, 10],
@@ -239,11 +255,6 @@ def main():
                     )
                     specimen_id = cur.fetchone()[0]
 
-                    cur.execute(
-                        "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
-                        (random.choice(user_ids), 'specimens', specimen_id, 'create', extras.Json({'order_id': order_id, 'accession_number': acc_num, 'rejection_reason': rejection_reason})),
-                    )
-
                     if not is_rejected:
                         loinc = random.choice(loinc_data)
                         flag = random.choice(flags)
@@ -276,11 +287,6 @@ def main():
                             (specimen_id, loinc[0], result_status, result_value, flag, result_time, result_time),
                         )
                         result_id = cur.fetchone()[0]
-
-                        cur.execute(
-                            "INSERT INTO audit_log (user_id, object_type, object_id, action, detail) VALUES (%s, %s, %s, %s, %s);",
-                            (random.choice(user_ids), 'lab_results', result_id, 'create', extras.Json({'specimen_id': specimen_id, 'loinc_code': loinc[0], 'value': result_value})),
-                        )
 
         logging.info("Seeded orders, specimens, and lab_results (%d orders total)", total_orders_created)
 
