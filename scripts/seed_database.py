@@ -150,6 +150,7 @@ def main():
 
         # 3) Seed patients
         patient_ids = []
+        skipped_patients = 0
         for _ in range(args.patients):
             mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
             sex = random.choice(['M', 'F'])
