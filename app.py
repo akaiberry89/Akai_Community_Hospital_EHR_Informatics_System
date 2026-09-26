@@ -165,7 +165,7 @@ def init_portfolio_db():
 
     # Generate 50 Patients using your original randomized logic parameters
     base_time = datetime.now() - timedelta(days=5)
-    for idx in range(1, 51):
+    for idx in range(1, 501):
         # Patient Data - Restoring your authentic random name & details structure
         mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
         sex = random.choice(['M', 'F'])
