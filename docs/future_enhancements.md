@@ -15,11 +15,11 @@ Bear with me as I learn how to translate what I've seen in the laboratory into h
 
 - [x] Ensure seed data assigns `user_id` to all audit records
 - [ ] Evaluate enforcing `audit_log.user_id` as NOT NULL in db schema
-- [ ] Add dedicated `system` user account for automated processes
-- [ ] Ensure all audit events are attributable to either:
+- [x] Add dedicated `system` user account for automated processes
+- [x] Ensure all audit events are attributable to either:
   - Human User
   - System Process
-- [ ] Review audit trail design against healthcare compliance best practices
+- [x] Review audit trail design against healthcare compliance best practices
 
 #### Audit Reports
 
@@ -101,7 +101,7 @@ Bear with me as I learn how to translate what I've seen in the laboratory into h
 - [ ] Explore PostgreSQL system catalogs
 - [ ] Learn indexes and query plans
 - [ ] Learn database views
-- [ ] Learn stored procedures and triggers
+- [x] Learn stored procedures and triggers
 
 ## Project Evolution History
 
@@ -176,3 +176,11 @@ Bear with me as I learn how to translate what I've seen in the laboratory into h
 - Added workflow delay analysis reports
 - Began design planning for simulated workflow delays to support operational performance analytics
 - Developed workflow-analysis reports using lifecycle timestamps (receipt, accessioning, result, reporting)
+
+### September 2026 - Server-Side Compliance and Auditing Migration
+
+- Decoupled HIPAA compliance logging from the application layer to the database schema layer
+- Engineered compiled server-side procedural triggers (`AFTER INSERT`) across all core operational tables
+- Designed a dedicated System Service Account Pattern (User ID 1: `sys_hl7_interface`) to cleanly segment automated interface traffic from human actions
+- Implemented an Idempotent Insertion Pattern (`ON CONFLICT DO NOTHING` in PostgreSQL and `IF NOT EXISTS` conditional logic in T-SQL) to eliminate seed collisions in append    mode
+- Enforced complete, serialized transactional snapshots using native JSON/JSONB string engines across both PostgreSQL and Microsoft SQL Server platforms  
