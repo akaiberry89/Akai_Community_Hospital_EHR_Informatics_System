@@ -193,3 +193,20 @@ SELECT
 	'lab_results', 
 	COUNT(*)
 FROM lab_results;
+
+-- ============================================================================
+-- QUERY 008: Laboratory Workflow Completion Rate Analysis
+-- BUSINESS QUESTION: 
+-- "What percentage of our collected specimens have successfully completed processing and received final lab results versus those that are still pending?"
+
+SELECT
+	COUNT(s.specimen_id) AS total_specimens_collected,
+	COUNT(lr.result_id) AS total_results_logged,
+	COUNT(s.specimen_id) - COUNT(lr.result_id) AS total_pending_specimens,
+	ROUND(
+		(COUNT(lr.result_id)::DECIMAL / COUNT(s.specimen_id)) * 100, 
+		2
+	) AS percent_complete
+FROM specimens s
+LEFT JOIN lab_results lr
+	ON s.specimen_id = lr.specimen_id;
