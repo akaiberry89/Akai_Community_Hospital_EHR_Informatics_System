@@ -177,7 +177,7 @@ Bear with me as I learn how to translate what I've seen in the laboratory into h
 - Began design planning for simulated workflow delays to support operational performance analytics
 - Developed workflow-analysis reports using lifecycle timestamps (receipt, accessioning, result, reporting)
 
-### September 2026 - Server-Side Compliance and Auditing Migration
+#### Server-Side Compliance and Auditing Migration
 
 - Decoupled HIPAA compliance logging from the application layer to the database schema layer
 - Engineered compiled server-side procedural triggers (`AFTER INSERT`) across all core operational tables
