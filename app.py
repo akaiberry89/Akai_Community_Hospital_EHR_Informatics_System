@@ -163,9 +163,24 @@ def init_portfolio_db():
     from faker import Faker
     fake = Faker()
 
-    # Generate 50 Patients using your original randomized logic parameters
-    base_time = datetime.now() - timedelta(days=5)
-    for idx in range(1, 501):
+        # --- NATIVE TEMPORAL ENGINE INITIALIZATION ---
+    now = datetime.now()
+    
+    # 1. Determine the baseline anchor (Find the start of the current week)
+    days_since_monday = now.weekday()  # Monday = 0, Tuesday = 1, etc.
+    start_of_week = now - timedelta(days=days_since_monday)
+    
+    # 2. Dynamic Count Calculations (500 Baseline + 50 additions for every passing day)
+    patients_to_generate = 500 + (days_since_monday * 50)
+    
+    # 3. Synchronize the Random Matrix Seed to ensure user layout consistency
+    random.seed(int(now.strftime("%Y%m%d")))
+    fake.seed_instance(int(now.strftime("%Y%m%d")))
+
+    # --- SEEDING ENGINE TRACK ---
+    base_time = start_of_week
+    for idx in range(1, patients_to_generate + 1):
+
         # Patient Data - Restoring your authentic random name & details structure
         mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
         sex = random.choice(['M', 'F'])
@@ -216,7 +231,17 @@ st.markdown("---")
 
 # Sidebar Configuration
 st.sidebar.header("🎛️ Laboratory Controls")
+
+# Keep your original navigation tip
 st.sidebar.info("Use the main panel tabs to alternate between clinical registries and background security structures.")
+
+# Stack your new dynamic data telemetry right beneath it
+st.sidebar.caption(f"📅 **System Local Clock:** {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+st.sidebar.info(
+    f"📡 **Operational Data Telemetry:** This portal simulates a live EHR inbound network stream. "
+    f"The database has automatically scaled up for the current calendar date "
+    f"and will execute an automated schema reset cycle this upcoming Sunday at midnight."
+)
 
 # Data Aggregation via Live Queries
 total_pats = int(pd.read_sql_query("SELECT COUNT(*) FROM patients", db_conn).iloc[0, 0])
