@@ -13,7 +13,7 @@ st.set_page_config(
 
 # --- 2. SELF-CONTAINED DATABASE INITIALIZATION ---
 @st.cache_resource
-def init_portfolio_db():
+def init_portfolio_db(current_date):
     """
     Builds an in-memory SQLite database mimicking the PostgreSQL/T-SQL DDL schema.
     Applies native SQLite database triggers to automate HIPAA Compliance Audit Logs.
@@ -196,7 +196,10 @@ def init_portfolio_db():
         for ord_idx in range(num_orders):
             prov = random.choice(providers)
             ord_status = random.choices(status_options, weights=status_weights, k=1)[0]
-            ord_date = (base_time + timedelta(hours=random.randint(1, 48))).strftime("%Y-%m-%d %H:%M")
+            max_hours_back = (days_since_monday * 24) + now.hour
+            hours_offset = random.randint(0, max(24, max_hours_back))
+            random_order_time = now - timedelta(hours=hours_offset)
+            ord_date = random_order_time.strftime("%Y-%m-%d %H:%M")
             
             cursor.execute("INSERT INTO orders (patient_id, ordering_provider, order_datetime, status) VALUES (?, ?, ?, ?);",
                            (patient_id, prov, ord_date, ord_status))
@@ -222,7 +225,8 @@ def init_portfolio_db():
     return conn
 
 # Connect to database instance
-db_conn = init_portfolio_db()
+today = datetime.now().date()
+db_conn = init_portfolio_db(today)
 
 # --- 3. DASHBOARD ARCHITECTURE ---
 st.title("🏥 Akai Community Hospital EHR Informatics Platform")
