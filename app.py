@@ -284,6 +284,7 @@ with tab_patients:
 with tab_orders:
     st.markdown("### 📋 orders Transactional Table")
     st.markdown("Tracks provider order requests mapped back to unique Patient IDs via foreign key constraints.")
+    # FIX: Changing the ORDER BY sequence to focus on the sequential primary key sequence
     orders_df = pd.read_sql_query("SELECT order_id, patient_id, ordering_provider, order_datetime, status FROM orders ORDER BY order_id DESC", db_conn)
     st.dataframe(orders_df, use_container_width=True, hide_index=True)
 
