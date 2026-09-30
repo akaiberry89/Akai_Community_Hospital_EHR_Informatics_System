@@ -17,6 +17,7 @@ def init_portfolio_db(current_date):
     """
     Builds an in-memory SQLite database mimicking the PostgreSQL/T-SQL DDL schema.
     Applies native SQLite database triggers to automate HIPAA Compliance Audit Logs.
+    Distributes patient and order data throughout the current week with realistic timestamps.
     """
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     cursor = conn.cursor()
@@ -107,7 +108,7 @@ def init_portfolio_db(current_date):
         );
     ''')
 
-     # NATIVE SQLITE TRIGGERS (REPLICATING YOUR POSTGRESQL PL/pgSQL LOGIC)
+    # NATIVE SQLITE TRIGGERS (REPLICATING YOUR POSTGRESQL PL/pgSQL LOGIC)
     cursor.execute('''
         CREATE TRIGGER trg_audit_insert_patients AFTER INSERT ON patients
         BEGIN
@@ -140,7 +141,7 @@ def init_portfolio_db(current_date):
         END;
     ''')
 
-    # SEED DATA INGESTION ENGINE (MIGRATED FROM YOUR SEED TRACKS)
+    # SEED DATA INGESTION ENGINE
     loinc_data = [
         ('2345-7', 'Glucose [Mass/volume] in Serum or Plasma', 'mg/dL', '70-99'),
         ('4544-3', 'Hematocrit [Volume Fraction] of Blood', '%', '37.0-51.0'),
@@ -159,67 +160,91 @@ def init_portfolio_db(current_date):
     status_options = ['completed', 'ordered', 'received', 'active', 'canceled']
     status_weights = [70, 15, 8, 5, 2]
 
-    # Ensure faker is imported at the top of this block
+    # Import faker for realistic data generation
     from faker import Faker
     fake = Faker()
 
-        # --- NATIVE TEMPORAL ENGINE INITIALIZATION ---
+    # --- TEMPORAL ENGINE INITIALIZATION ---
     now = datetime.now()
     
-    # 1. Determine the baseline anchor (Find the start of the current week)
+    # 1. Determine the baseline anchor (Find the start of the current week - Monday)
     days_since_monday = now.weekday()  # Monday = 0, Tuesday = 1, etc.
     start_of_week = now - timedelta(days=days_since_monday)
+    # Set to 00:00:00 on Monday
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
     
     # 2. Dynamic Count Calculations (500 Baseline + 50 additions for every passing day)
     patients_to_generate = 500 + (days_since_monday * 50)
     
-    # 3. Synchronize the Random Matrix Seed to ensure user layout consistency
+    # 3. Synchronize the Random Matrix Seed for consistency across refreshes
     random.seed(int(now.strftime("%Y%m%d")))
     fake.seed_instance(int(now.strftime("%Y%m%d")))
 
     # --- SEEDING ENGINE TRACK ---
-    base_time = start_of_week
+    # Distribute patients across the week (Monday through today)
+    # Each day gets patients distributed across 24 hours with realistic hospital hours (7 AM - 11 PM)
+    
     for idx in range(1, patients_to_generate + 1):
-
-        # Patient Data - Restoring your authentic random name & details structure
+        # Determine which day this patient should be created on
+        day_offset = (idx - 1) % max(1, (days_since_monday + 1))  # Spread across days so far this week
+        patient_day = start_of_week + timedelta(days=day_offset)
+        
+        # Distribute within hospital hours (7 AM to 11 PM)
+        hour_offset = random.randint(7, 22)
+        minute_offset = random.randint(0, 59)
+        patient_created_time = patient_day.replace(hour=hour_offset, minute=minute_offset, second=random.randint(0, 59))
+        
+        # Patient Data
         mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
         sex = random.choice(['M', 'F'])
         first = fake.first_name_male() if sex == 'M' else fake.first_name_female()
         last = fake.last_name()
         dob = fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y-%m-%d")
         
-        cursor.execute("INSERT INTO patients (mrn, first_name, last_name, dob, sex) VALUES (?, ?, ?, ?, ?);", 
-                       (mrn, first, last, dob, sex))
+        # Insert patient with explicit created_at timestamp
+        cursor.execute("INSERT INTO patients (mrn, first_name, last_name, dob, sex, created_at) VALUES (?, ?, ?, ?, ?, ?);", 
+                       (mrn, first, last, dob, sex, patient_created_time.strftime("%Y-%m-%d %H:%M:%S")))
         patient_id = cursor.lastrowid
         
         num_orders = random.randint(1, 2)
         for ord_idx in range(num_orders):
             prov = random.choice(providers)
             ord_status = random.choices(status_options, weights=status_weights, k=1)[0]
-            max_hours_back = (days_since_monday * 24) + now.hour
-            hours_offset = random.randint(0, max(24, max_hours_back))
-            random_order_time = now - timedelta(hours=hours_offset)
-            ord_date = random_order_time.strftime("%Y-%m-%d %H:%M")
             
-            cursor.execute("INSERT INTO orders (patient_id, ordering_provider, order_datetime, status) VALUES (?, ?, ?, ?);",
-                           (patient_id, prov, ord_date, ord_status))
+            # Orders created after patient creation, but within the same day or next few hours
+            hours_after_patient = random.randint(0, 12)
+            order_time = patient_created_time + timedelta(hours=hours_after_patient)
+            
+            # Make sure order doesn't go past current time
+            if order_time > now:
+                order_time = now - timedelta(hours=random.randint(1, 6))
+            
+            ord_date = order_time.strftime("%Y-%m-%d %H:%M")
+            
+            cursor.execute("INSERT INTO orders (patient_id, ordering_provider, order_datetime, status, created_at) VALUES (?, ?, ?, ?, ?);",
+                           (patient_id, prov, ord_date, ord_status, order_time.strftime("%Y-%m-%d %H:%M:%S")))
             order_id = cursor.lastrowid
             
             acc_num = f"ACC-{100000 + order_id}"
             spec_type = random.choice(specimen_types)
             rej = random.choice(rejection_reasons) if ord_status == 'canceled' else None
             
-            cursor.execute("INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, rejection_reason) VALUES (?, ?, ?, ?, ?);",
-                           (order_id, acc_num, spec_type, ord_date, rej))
+            cursor.execute("INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, rejection_reason, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           (order_id, acc_num, spec_type, ord_date, rej, order_time.strftime("%Y-%m-%d %H:%M:%S")))
             specimen_id = cursor.lastrowid
             
             if ord_status == 'completed':
-                loinc = random.choice(loinc_data) [0]  # Get the LOINC code
+                loinc = random.choice(loinc_data)[0]  # Get the LOINC code
                 res_flag = random.choice(flags)
                 res_val = f"{random.uniform(10.0, 150.0):.1f}" if res_flag == 'normal' else f"{random.uniform(151.0, 300.0):.1f}"
                 
-                cursor.execute("INSERT INTO lab_results (specimen_id, loinc_code, result_value, result_flag, result_datetime) VALUES (?, ?, ?, ?, ?);",
-                               (specimen_id, loinc, res_val, res_flag, ord_date))
+                # Result time is a bit after order
+                result_time = order_time + timedelta(hours=random.randint(1, 8))
+                if result_time > now:
+                    result_time = now - timedelta(hours=random.randint(0, 3))
+                
+                cursor.execute("INSERT INTO lab_results (specimen_id, loinc_code, result_value, result_flag, result_datetime, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                               (specimen_id, loinc, res_val, res_flag, result_time.strftime("%Y-%m-%d %H:%M:%S"), result_time.strftime("%Y-%m-%d %H:%M:%S")))
                 
     conn.commit()
     return conn
@@ -235,16 +260,14 @@ st.markdown("---")
 
 # Sidebar Configuration
 st.sidebar.header("🎛️ Laboratory Controls")
-
-# Keep your original navigation tip
 st.sidebar.info("Use the main panel tabs to alternate between clinical registries and background security structures.")
 
-# Stack your new dynamic data telemetry right beneath it
-st.sidebar.caption(f"📅 **System Local Clock:** {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+# Stack your new dynamic data telemetry
+st.sidebar.caption(f"📅 **System Local Clock:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 st.sidebar.info(
     f"📡 **Operational Data Telemetry:** This portal simulates a live EHR inbound network stream. "
-    f"The database has automatically scaled up for the current calendar date "
-    f"and will execute an automated schema reset cycle this upcoming Sunday at midnight."
+    f"The database scales dynamically based on the current day of the week "
+    f"and will execute an automated schema reset cycle every Sunday at midnight."
 )
 
 # Data Aggregation via Live Queries
@@ -265,7 +288,6 @@ if criticals > 0:
 st.markdown("### 📊 Enterprise Ledger Workspace")
 
 # --- 4. NAVIGATION VIEW INTERFACES ---
-# Restructuring tabs to match your exact DDL schema tables and workflows
 tab_patients, tab_orders, tab_specimens, tab_results, tab_audit, tab_query = st.tabs([
     "👤 patients Table", 
     "📋 orders Table", 
@@ -278,14 +300,13 @@ tab_patients, tab_orders, tab_specimens, tab_results, tab_audit, tab_query = st.
 with tab_patients:
     st.markdown("### 👤 patients Registry Table")
     st.markdown("Raw transactional rows from the `patients` schema table, tracking MRNs and patient demographics.")
-    pats_df = pd.read_sql_query("SELECT patient_id, mrn, first_name, last_name, dob, sex, created_at FROM patients ORDER BY patient_id DESC", db_conn)
+    pats_df = pd.read_sql_query("SELECT patient_id, mrn, first_name, last_name, dob, sex, created_at FROM patients ORDER BY created_at DESC", db_conn)
     st.dataframe(pats_df, use_container_width=True, hide_index=True)
 
 with tab_orders:
     st.markdown("### 📋 orders Transactional Table")
     st.markdown("Tracks provider order requests mapped back to unique Patient IDs via foreign key constraints.")
-    # FIX: Changing the ORDER BY sequence to focus on the sequential primary key sequence
-    orders_df = pd.read_sql_query("SELECT order_id, patient_id, ordering_provider, order_datetime, status FROM orders ORDER BY order_id DESC", db_conn)
+    orders_df = pd.read_sql_query("SELECT order_id, patient_id, ordering_provider, order_datetime, status, created_at FROM orders ORDER BY created_at DESC", db_conn)
     st.dataframe(orders_df, use_container_width=True, hide_index=True)
 
 with tab_specimens:
@@ -302,17 +323,17 @@ with tab_specimens:
     """, db_conn)
     st.bar_chart(data=chart_df, x="specimen_type", y="total_volume", color="#4b7eff")
     
-    spec_df = pd.read_sql_query("SELECT specimen_id, order_id, accession_number, specimen_type, collection_datetime, rejection_reason FROM specimens ORDER BY specimen_id DESC", db_conn)
+    spec_df = pd.read_sql_query("SELECT specimen_id, order_id, accession_number, specimen_type, collection_datetime, rejection_reason, created_at FROM specimens ORDER BY created_at DESC", db_conn)
     st.dataframe(spec_df, use_container_width=True, hide_index=True)
 
 with tab_results:
     st.markdown("### 🔬 lab_results Structured View")
     st.markdown("Normalized transactional data linked to standard LOINC master mapping protocols.")
     res_query = """
-        SELECT r.result_id, r.specimen_id, lm.test_name, r.result_value, lm.units, lm.ref_range, r.result_flag, r.status
+        SELECT r.result_id, r.specimen_id, lm.test_name, r.result_value, lm.units, lm.ref_range, r.result_flag, r.status, r.created_at
         FROM lab_results r
         JOIN loinc_map lm ON r.loinc_code = lm.loinc_code
-        ORDER BY r.result_id DESC
+        ORDER BY r.created_at DESC
     """
     res_df = pd.read_sql_query(res_query, db_conn)
     st.dataframe(res_df, use_container_width=True, hide_index=True)
