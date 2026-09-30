@@ -228,6 +228,16 @@ def init_portfolio_db(current_date):
         last = fake.last_name()
         dob = fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y-%m-%d")
         
+        # 1. Calculate the order time by adding a random delay after the patient was created
+        order_time = patient_created_time + timedelta(minutes=random.randint(15, 120))
+
+        # 2. ⚡ YOUR SAFETY CAP: If it accidentally calculates in the future, pull it back!
+        if order_time > now:
+            order_time = now - timedelta(minutes=random.randint(5, 30))
+
+        # 3. Convert it to a string so the database can read it cleanly
+        order_time_str = order_time.strftime("%Y-%m-%d %H:%M:%S")
+        
         # Insert patient with explicit created_at timestamp
         cursor.execute("INSERT INTO patients (mrn, first_name, last_name, dob, sex, created_at) VALUES (?, ?, ?, ?, ?, ?);", 
                        (mrn, first, last, dob, sex, patient_created_time.strftime("%Y-%m-%d %H:%M:%S")))
