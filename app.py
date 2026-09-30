@@ -508,15 +508,25 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                 segment = fields[0]
                 
                 if segment == 'PID' and len(fields) > 5:
+                    # --- DYNAMIC DATABASE LOOKUP FOR PID-3 (MRN) ---
+                    raw_mrn = fields[3]
+                    
+                    cursor = db_conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM patients WHERE mrn = ?", (raw_mrn,))
+                    if cursor.fetchone()[0] > 0:
+                        pid_validation = '✅ Valid (Patient Found)'
+                    else:
+                        pid_validation = f'❌ Error: MRN {raw_mrn} not found in registry'
+
                     parsed_results.append({
                         'HL7 Position': 'PID-3',
                         'Field Name': 'Patient Identifier (MRN)',
                         'Req': 'R',
-                        'Extracted Value': fields[3],
+                        'Extracted Value': raw_mrn,
                         'Data Type': 'CX',
                         'Transformation Applied': 'Direct Map',
                         'DB Destination': 'patients.mrn',
-                        'Validation': '✅ Valid'
+                        'Validation': pid_validation
                     })
                     parsed_results.append({
                         'HL7 Position': 'PID-5',
@@ -526,7 +536,7 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                         'Data Type': 'XPN',
                         'Transformation Applied': "Split by '^' (Last, First)",
                         'DB Destination': 'patients.last_name / patients.first_name',
-                        'Validation': '✅ Valid'
+                        'Validation': '✅ Valid' 
                     })
                 
                 elif segment == 'OBR' and len(fields) > 3:
