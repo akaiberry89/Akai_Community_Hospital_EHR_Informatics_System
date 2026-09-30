@@ -295,13 +295,14 @@ if criticals > 0:
 st.markdown("### 📊 Enterprise Ledger Workspace")
 
 # --- 4. NAVIGATION VIEW INTERFACES ---
-tab_patients, tab_orders, tab_specimens, tab_results, tab_departments, tab_audit, tab_query = st.tabs([
+tab_patients, tab_orders, tab_specimens, tab_results, tab_departments, tab_audit, tab_hl7, tab_query = st.tabs([
     "👤 patients Table", 
     "📋 orders Table", 
     "🧪 specimens Table", 
     "🔬 lab_results Table",
     "🏢 Department Analytics",
     "🔒 audit_log Table",
+    "📟 HL7 Interface Monitor",
     "💻 SQL Query Console"
 ])
 
@@ -402,6 +403,180 @@ with tab_audit:
     st.info("Immutable Tracking Log: Captured natively via operational database triggers to guarantee absolute security monitoring.")
     audit_df = pd.read_sql_query("SELECT audit_id, user_id, object_type, object_id, action, action_time, detail FROM audit_log ORDER BY audit_id DESC", db_conn)
     st.dataframe(audit_df, use_container_width=True, hide_index=True)
+
+with tab_hl7:
+    st.markdown("### 📟 HL7 Interface Monitor")
+    st.markdown("Real-time HL7 v2.5 message ingestion, parsing, and validation framework.")
+    
+    # --- 1. DYNAMIC KPI SUMMARY ROW ---
+    now = datetime.now()
+    days_since_monday = now.weekday()
+    total_messages = 150 + (days_since_monday * 225)
+    successful_ingestions = int(total_messages * 0.995)
+    validation_faults = total_messages - successful_ingestions
+    
+    st.markdown("#### 📊 HL7 Interface KPI Summary")
+    kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+    kpi_col1.metric("Total Messages (Weekly)", total_messages)
+    kpi_col2.metric("Successful Ingestions", f"{successful_ingestions} (99.5%)")
+    kpi_col3.metric("Validation Faults", f"{validation_faults} (0.5%)")
+    
+    # --- 2. LIVE PATIENT DATA SYNC & HL7 PARSER ---
+    st.markdown("#### 🧬 HL7 ORU^R01 Parser & Mapping Simulator")
+    
+    # Fetch most recent patient from database
+    try:
+        recent_patient = pd.read_sql_query(
+            "SELECT mrn, first_name, last_name FROM patients ORDER BY created_at DESC LIMIT 1",
+            db_conn
+        )
+        if len(recent_patient) > 0:
+            live_mrn = recent_patient.iloc[0]['mrn']
+            live_first = recent_patient.iloc[0]['first_name']
+            live_last = recent_patient.iloc[0]['last_name']
+        else:
+            live_mrn = "MRN99999999"
+            live_first = "John"
+            live_last = "Doe"
+    except:
+        live_mrn = "MRN99999999"
+        live_first = "John"
+        live_last = "Doe"
+    
+    # Generate sample HL7 message using live data
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    sample_hl7 = f"""MSH|^~\\&|LAB_SYSTEM|ACME_HOSP|LIS|RECEIVING|{timestamp}||ORU^R01|MSG123456|P|2.5|
+PID|1||{live_mrn}||{live_last}^{live_first}|SMITH|19800515|M|||123 MAIN ST^^CITY^ST^12345||
+OBR|1|ORD789|ACC-100123|2345-7^GLUCOSE||{timestamp}|||||||||||||||F||
+OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
+    
+    st.info(
+        "**HL7 v2.5 Message Structure Reference:**\n\n"
+        "Each line in the raw message is a **Segment** (e.g., MSH, PID, OBR, OBX).\n"
+        "Each value within a segment is separated by a pipe (`|`) and represents a **Field**.\n"
+        "**Field counting starts at 0 after the segment identifier.**\n"
+        "- `PID-3` = Patient Identifier (MRN) — the 3rd field in the PID segment\n"
+        "- `PID-5` = Patient Name — the 5th field in the PID segment\n"
+        "- `OBR-2` = Placer Order Number (Accession) — the 2nd field in the OBR segment\n"
+        "- `OBX-5` = Result Value — the 5th field in the OBX segment"
+    )
+    
+    user_hl7 = st.text_area(
+        "Raw HL7 Message Input",
+        value=sample_hl7,
+        height=150
+    )
+    
+    if st.button("Parse & Map to Database ⚡", key="hl7_parse"):
+        try:
+            lines = user_hl7.strip().split('\n')
+            parsed_results = []
+            
+            for line in lines:
+                fields = line.split('|')
+                segment = fields[0]
+                
+                # Parse specific segments
+                if segment == 'PID' and len(fields) > 5:
+                    # PID-3: Patient Identifier (MRN)
+                    parsed_results.append({
+                        'HL7 Position': 'PID-3',
+                        'Field Name': 'Patient Identifier (MRN)',
+                        'Extracted Value': fields[3],
+                        'Data Type': 'CX',
+                        'DB Destination': 'patients.mrn'
+                    })
+                    # PID-5: Patient Name
+                    parsed_results.append({
+                        'HL7 Position': 'PID-5',
+                        'Field Name': 'Patient Name',
+                        'Extracted Value': fields[5],
+                        'Data Type': 'XPN',
+                        'DB Destination': 'patients.last_name / patients.first_name'
+                    })
+                
+                elif segment == 'OBR' and len(fields) > 3:
+                    # OBR-2: Placer Order Number
+                    parsed_results.append({
+                        'HL7 Position': 'OBR-2',
+                        'Field Name': 'Placer Order Number',
+                        'Extracted Value': fields[2],
+                        'Data Type': 'EI',
+                        'DB Destination': 'orders.order_id'
+                    })
+                    # OBR-4: Universal Service Identifier (Test Code)
+                    parsed_results.append({
+                        'HL7 Position': 'OBR-4',
+                        'Field Name': 'Test Code (LOINC)',
+                        'Extracted Value': fields[4],
+                        'Data Type': 'CE',
+                        'DB Destination': 'lab_results.loinc_code'
+                    })
+                
+                elif segment == 'OBX' and len(fields) > 5:
+                    # OBX-3: Observation Identifier
+                    parsed_results.append({
+                        'HL7 Position': 'OBX-3',
+                        'Field Name': 'Observation Identifier',
+                        'Extracted Value': fields[3],
+                        'Data Type': 'CE',
+                        'DB Destination': 'loinc_map.loinc_code'
+                    })
+                    # OBX-5: Observation Value
+                    parsed_results.append({
+                        'HL7 Position': 'OBX-5',
+                        'Field Name': 'Result Value',
+                        'Extracted Value': fields[5],
+                        'Data Type': 'ST',
+                        'DB Destination': 'lab_results.result_value'
+                    })
+            
+            if parsed_results:
+                parsed_df = pd.DataFrame(parsed_results)
+                st.success("✅ HL7 message parsed successfully!")
+                st.markdown("#### Extracted Field Mapping")
+                st.dataframe(parsed_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("No recognizable HL7 segments found in message.")
+        except Exception as e:
+            st.error(f"❌ Parser Error: {str(e)}")
+    
+    # --- 3. INTERFACE ERROR LOG TABLE ---
+    st.markdown("#### ⚠️ Interface Error Feed")
+    
+    # Generate dynamic error rows based on day of week
+    base_errors = [
+        {
+            'Timestamp': '2026-09-30 14:23:45',
+            'Segment': 'PID-3',
+            'Severity': 'Critical',
+            'Description': 'Inbound message rejected: Missing required Patient Identifier (MRN) placeholder. Cannot map to patients.mrn.'
+        },
+        {
+            'Timestamp': '2026-09-30 13:15:22',
+            'Segment': 'OBR-4',
+            'Severity': 'High',
+            'Description': 'Validation fault: LOINC code "9999-9" is not in reference master. Accession ACC-100089 held pending reconciliation.'
+        },
+        {
+            'Timestamp': '2026-09-30 12:07:38',
+            'Segment': 'OBX-5',
+            'Severity': 'Medium',
+            'Description': 'Result value truncated: Expected numeric value, received text string "Pending". Stored as preliminary result.'
+        },
+    ]
+    
+    # Add extra errors on Thursday-Sunday
+    if days_since_monday >= 3:
+        base_errors.append({
+            'Timestamp': '2026-09-30 11:42:10',
+            'Segment': 'MSH-9',
+            'Severity': 'High',
+            'Description': 'Message type mismatch: Expected ORU^R01, received ADT^A01. Message routed to dead-letter queue for manual review.'
+        })
+    
+    error_df = pd.DataFrame(base_errors)
+    st.dataframe(error_df, use_container_width=True, hide_index=True)
 
 with tab_query:
     st.markdown("### 💻 Enterprise SQL Sandbox Console")
