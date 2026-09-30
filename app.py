@@ -123,39 +123,39 @@ def init_portfolio_db(current_date):
         );
     ''')
 
-    # NATIVE SQLITE TRIGGERS (REPLICATING YOUR POSTGRESQL PL/pgSQL LOGIC)
+   # NATIVE SQLITE TRIGGERS (REPLICATING YOUR POSTGRESQL PL/pgSQL LOGIC)
     cursor.execute('''
         CREATE TRIGGER trg_audit_insert_patients AFTER INSERT ON patients
         BEGIN
-            INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
-            VALUES (1, 'patients', NEW.patient_id, 'CREATE', '{"event_description": "Record automatically provisioned via system process"}');
+            INSERT INTO audit_log (user_id, object_type, object_id, action, action_time, detail)
+            VALUES (1, 'patients', NEW.patient_id, 'CREATE', NEW.created_at, '{"event_description": "Record automatically provisioned via system process"}');
         END;
     ''')
     
     cursor.execute('''
         CREATE TRIGGER trg_audit_insert_orders AFTER INSERT ON orders
         BEGIN
-            INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
-            VALUES (1, 'orders', NEW.order_id, 'CREATE', '{"event_description": "Record automatically provisioned via system process"}');
+            INSERT INTO audit_log (user_id, object_type, object_id, action, action_time, detail)
+            VALUES (1, 'orders', NEW.order_id, 'CREATE', NEW.created_at, '{"event_description": "Record automatically provisioned via system process"}');
         END;
     ''')
     
     cursor.execute('''
         CREATE TRIGGER trg_audit_insert_specimens AFTER INSERT ON specimens
         BEGIN
-            INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
-            VALUES (1, 'specimens', NEW.specimen_id, 'CREATE', '{"event_description": "Record automatically provisioned via system process"}');
+            INSERT INTO audit_log (user_id, object_type, object_id, action, action_time, detail)
+            VALUES (1, 'specimens', NEW.specimen_id, 'CREATE', NEW.created_at, '{"event_description": "Record automatically provisioned via system process"}');
         END;
     ''')
     
     cursor.execute('''
         CREATE TRIGGER trg_audit_insert_results AFTER INSERT ON lab_results
         BEGIN
-            INSERT INTO audit_log (user_id, object_type, object_id, action, detail)
-            VALUES (1, 'lab_results', NEW.result_id, 'CREATE', '{"event_description": "Record automatically provisioned via system process"}');
+            INSERT INTO audit_log (user_id, object_type, object_id, action, action_time, detail)
+            VALUES (1, 'lab_results', NEW.result_id, 'CREATE', NEW.created_at, '{"event_description": "Record automatically provisioned via system process"}');
         END;
     ''')
-
+    
     # SEED DATA INGESTION ENGINE
     loinc_data = [
         ('2345-7', 'Glucose [Mass/volume] in Serum or Plasma', 'mg/dL', '70-99'),
