@@ -458,8 +458,10 @@ with tab_hl7:
         live_first = "John"
         live_last = "Doe"
     
-    timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y%m%d%H%M%S")
-    sample_hl7 = f"""MSH|^~\\&|LAB_SYSTEM|ACME_HOSP|LIS|RECEIVING|{timestamp}||ORU^R01|MSG123456|P|2.5|
+    # Generate the default HL7 string ONLY once and store it in session state
+    if "default_hl7" not in st.session_state:
+        timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y%m%d%H%M%S")
+        st.session_state.default_hl7 = f"""MSH|^~\\&|LAB_SYSTEM|ACME_HOSP|LIS|RECEIVING|{timestamp}||ORU^R01|MSG123456|P|2.5|
 PID|1||{live_mrn}||{live_last}^{live_first}|SMITH|19800515|M|||123 MAIN ST^^CITY^ST^12345||
 OBR|1|ORD789|ACC-100123|2345-7^GLUCOSE||{timestamp}|||||||||||||||F||
 OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
@@ -475,78 +477,91 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
         "- `OBX-5` = Result Value — the 5th field in the OBX segment"
     )
     
+    # Use the session state variable for the value
     user_hl7 = st.text_area(
         "Raw HL7 Message Input",
-        value=sample_hl7,
+        value=st.session_state.default_hl7,
         height=150
     )
     
-    if st.button("Parse & Map to Database ⚡", key="hl7_parse"):
-        try:
-            lines = user_hl7.strip().split('\n')
-            parsed_results = []
+# Create two columns to place the buttons side-by-side
+    btn_col1, btn_col2 = st.columns([1, 4]) 
+    
+    with btn_col1:
+        if st.button("Parse & Map to Database ⚡", key="hl7_parse"):
+            try:
+                lines = user_hl7.strip().split('\n')
+                parsed_results = []
+                
+                for line in lines:
+                    fields = line.split('|')
+                    segment = fields[0]
+                    
+                    if segment == 'PID' and len(fields) > 5:
+                        parsed_results.append({
+                            'HL7 Position': 'PID-3',
+                            'Field Name': 'Patient Identifier (MRN)',
+                            'Extracted Value': fields[3],
+                            'Data Type': 'CX',
+                            'DB Destination': 'patients.mrn'
+                        })
+                        parsed_results.append({
+                            'HL7 Position': 'PID-5',
+                            'Field Name': 'Patient Name',
+                            'Extracted Value': fields[5],
+                            'Data Type': 'XPN',
+                            'DB Destination': 'patients.last_name / patients.first_name'
+                        })
+                    
+                    elif segment == 'OBR' and len(fields) > 3:
+                        parsed_results.append({
+                            'HL7 Position': 'OBR-2',
+                            'Field Name': 'Placer Order Number',
+                            'Extracted Value': fields[2],
+                            'Data Type': 'EI',
+                            'DB Destination': 'orders.order_id'
+                        })
+                        parsed_results.append({
+                            'HL7 Position': 'OBR-4',
+                            'Field Name': 'Test Code (LOINC)',
+                            'Extracted Value': fields[4],
+                            'Data Type': 'CE',
+                            'DB Destination': 'lab_results.loinc_code'
+                        })
+                    
+                    elif segment == 'OBX' and len(fields) > 5:
+                        parsed_results.append({
+                            'HL7 Position': 'OBX-3',
+                            'Field Name': 'Observation Identifier',
+                            'Extracted Value': fields[3],
+                            'Data Type': 'CE',
+                            'DB Destination': 'loinc_map.loinc_code'
+                        })
+                        parsed_results.append({
+                            'HL7 Position': 'OBX-5',
+                            'Field Name': 'Result Value',
+                            'Extracted Value': fields[5],
+                            'Data Type': 'ST',
+                            'DB Destination': 'lab_results.result_value'
+                        })
+                
+                if parsed_results:
+                    parsed_df = pd.DataFrame(parsed_results)
+                    st.success("✅ HL7 message parsed successfully!")
+                    st.markdown("#### Extracted Field Mapping")
+                    st.dataframe(parsed_df, use_container_width=True, hide_index=True)
+                else:
+                    st.warning("No recognizable HL7 segments found in message.")
+            except Exception as e:
+                st.error(f"❌ Parser Error: {str(e)}")
+
+    with btn_col2:
+        # If the user clicks reset, we delete the saved state and rerun the app instantly
+        if st.button("Reset Sandbox 🔄", key="hl7_reset"):
+            if "default_hl7" in st.session_state:
+                del st.session_state.default_hl7
+            st.rerun()
             
-            for line in lines:
-                fields = line.split('|')
-                segment = fields[0]
-                
-                if segment == 'PID' and len(fields) > 5:
-                    parsed_results.append({
-                        'HL7 Position': 'PID-3',
-                        'Field Name': 'Patient Identifier (MRN)',
-                        'Extracted Value': fields[3],
-                        'Data Type': 'CX',
-                        'DB Destination': 'patients.mrn'
-                    })
-                    parsed_results.append({
-                        'HL7 Position': 'PID-5',
-                        'Field Name': 'Patient Name',
-                        'Extracted Value': fields[5],
-                        'Data Type': 'XPN',
-                        'DB Destination': 'patients.last_name / patients.first_name'
-                    })
-                
-                elif segment == 'OBR' and len(fields) > 3:
-                    parsed_results.append({
-                        'HL7 Position': 'OBR-2',
-                        'Field Name': 'Placer Order Number',
-                        'Extracted Value': fields[2],
-                        'Data Type': 'EI',
-                        'DB Destination': 'orders.order_id'
-                    })
-                    parsed_results.append({
-                        'HL7 Position': 'OBR-4',
-                        'Field Name': 'Test Code (LOINC)',
-                        'Extracted Value': fields[4],
-                        'Data Type': 'CE',
-                        'DB Destination': 'lab_results.loinc_code'
-                    })
-                
-                elif segment == 'OBX' and len(fields) > 5:
-                    parsed_results.append({
-                        'HL7 Position': 'OBX-3',
-                        'Field Name': 'Observation Identifier',
-                        'Extracted Value': fields[3],
-                        'Data Type': 'CE',
-                        'DB Destination': 'loinc_map.loinc_code'
-                    })
-                    parsed_results.append({
-                        'HL7 Position': 'OBX-5',
-                        'Field Name': 'Result Value',
-                        'Extracted Value': fields[5],
-                        'Data Type': 'ST',
-                        'DB Destination': 'lab_results.result_value'
-                    })
-            
-            if parsed_results:
-                parsed_df = pd.DataFrame(parsed_results)
-                st.success("✅ HL7 message parsed successfully!")
-                st.markdown("#### Extracted Field Mapping")
-                st.dataframe(parsed_df, use_container_width=True, hide_index=True)
-            else:
-                st.warning("No recognizable HL7 segments found in message.")
-        except Exception as e:
-            st.error(f"❌ Parser Error: {str(e)}")
     
     # --- 3. INTERFACE ERROR LOG TABLE ---
     st.markdown("#### ⚠️ Interface Error Feed")
