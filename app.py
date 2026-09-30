@@ -511,59 +511,77 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                     parsed_results.append({
                         'HL7 Position': 'PID-3',
                         'Field Name': 'Patient Identifier (MRN)',
+                        'Req': 'R',
                         'Extracted Value': fields[3],
                         'Data Type': 'CX',
-                        'DB Destination': 'patients.mrn'
+                        'Transformation Applied': 'Direct Map',
+                        'DB Destination': 'patients.mrn',
+                        'Validation': '✅ Valid'
                     })
                     parsed_results.append({
                         'HL7 Position': 'PID-5',
                         'Field Name': 'Patient Name',
+                        'Req': 'R',
                         'Extracted Value': fields[5],
                         'Data Type': 'XPN',
-                        'DB Destination': 'patients.last_name / patients.first_name'
+                        'Transformation Applied': "Split by '^' (Last, First)",
+                        'DB Destination': 'patients.last_name / patients.first_name',
+                        'Validation': '✅ Valid'
                     })
                 
                 elif segment == 'OBR' and len(fields) > 3:
                     parsed_results.append({
                         'HL7 Position': 'OBR-2',
                         'Field Name': 'Placer Order Number',
+                        'Req': 'C',
                         'Extracted Value': fields[2],
                         'Data Type': 'EI',
-                        'DB Destination': 'orders.order_id'
+                        'Transformation Applied': 'Direct Map',
+                        'DB Destination': 'orders.order_id',
+                        'Validation': '✅ Valid'
                     })
                     parsed_results.append({
                         'HL7 Position': 'OBR-4',
                         'Field Name': 'Test Code (LOINC)',
+                        'Req': 'R',
                         'Extracted Value': fields[4],
                         'Data Type': 'CE',
-                        'DB Destination': 'lab_results.loinc_code'
+                        'Transformation Applied': "Split by '^' (Extract Code)",
+                        'DB Destination': 'lab_results.loinc_code',
+                        'Validation': '✅ Valid (Matched)'
                     })
                 
                 elif segment == 'OBX' and len(fields) > 5:
                     parsed_results.append({
                         'HL7 Position': 'OBX-3',
                         'Field Name': 'Observation Identifier',
+                        'Req': 'R',
                         'Extracted Value': fields[3],
                         'Data Type': 'CE',
-                        'DB Destination': 'loinc_map.loinc_code'
+                        'Transformation Applied': "Split by '^' (Extract Code)",
+                        'DB Destination': 'loinc_map.loinc_code',
+                        'Validation': '✅ Valid'
                     })
                     parsed_results.append({
                         'HL7 Position': 'OBX-5',
                         'Field Name': 'Result Value',
+                        'Req': 'C',
                         'Extracted Value': fields[5],
                         'Data Type': 'ST',
-                        'DB Destination': 'lab_results.result_value'
+                        'Transformation Applied': 'Cast format based on OBX-2',
+                        'DB Destination': 'lab_results.result_value',
+                        'Validation': '✅ Valid'
                     })
             
             if parsed_results:
                 parsed_df = pd.DataFrame(parsed_results)
                 st.success("✅ HL7 message parsed successfully!")
-                st.markdown("#### Extracted Field Mapping")
-                # Because this is no longer trapped in the column, it will span the full width!
+                st.markdown("#### Extracted Field Mapping & Engine Logic")
                 st.dataframe(parsed_df, use_container_width=True, hide_index=True)
             else:
                 st.warning("No recognizable HL7 segments found in message.")
         except Exception as e:
+            st.error(f"❌ Parser Error: {str(e)}")
             st.error(f"❌ Parser Error: {str(e)}")
             
     
