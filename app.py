@@ -484,83 +484,87 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
         height=150
     )
     
-# Create two columns to place the buttons side-by-side
+# 1. Put ONLY the buttons inside the columns
     btn_col1, btn_col2 = st.columns([1, 4]) 
     
     with btn_col1:
-        if st.button("Parse & Map to Database ⚡", key="hl7_parse"):
-            try:
-                lines = user_hl7.strip().split('\n')
-                parsed_results = []
-                
-                for line in lines:
-                    fields = line.split('|')
-                    segment = fields[0]
-                    
-                    if segment == 'PID' and len(fields) > 5:
-                        parsed_results.append({
-                            'HL7 Position': 'PID-3',
-                            'Field Name': 'Patient Identifier (MRN)',
-                            'Extracted Value': fields[3],
-                            'Data Type': 'CX',
-                            'DB Destination': 'patients.mrn'
-                        })
-                        parsed_results.append({
-                            'HL7 Position': 'PID-5',
-                            'Field Name': 'Patient Name',
-                            'Extracted Value': fields[5],
-                            'Data Type': 'XPN',
-                            'DB Destination': 'patients.last_name / patients.first_name'
-                        })
-                    
-                    elif segment == 'OBR' and len(fields) > 3:
-                        parsed_results.append({
-                            'HL7 Position': 'OBR-2',
-                            'Field Name': 'Placer Order Number',
-                            'Extracted Value': fields[2],
-                            'Data Type': 'EI',
-                            'DB Destination': 'orders.order_id'
-                        })
-                        parsed_results.append({
-                            'HL7 Position': 'OBR-4',
-                            'Field Name': 'Test Code (LOINC)',
-                            'Extracted Value': fields[4],
-                            'Data Type': 'CE',
-                            'DB Destination': 'lab_results.loinc_code'
-                        })
-                    
-                    elif segment == 'OBX' and len(fields) > 5:
-                        parsed_results.append({
-                            'HL7 Position': 'OBX-3',
-                            'Field Name': 'Observation Identifier',
-                            'Extracted Value': fields[3],
-                            'Data Type': 'CE',
-                            'DB Destination': 'loinc_map.loinc_code'
-                        })
-                        parsed_results.append({
-                            'HL7 Position': 'OBX-5',
-                            'Field Name': 'Result Value',
-                            'Extracted Value': fields[5],
-                            'Data Type': 'ST',
-                            'DB Destination': 'lab_results.result_value'
-                        })
-                
-                if parsed_results:
-                    parsed_df = pd.DataFrame(parsed_results)
-                    st.success("✅ HL7 message parsed successfully!")
-                    st.markdown("#### Extracted Field Mapping")
-                    st.dataframe(parsed_df, use_container_width=True, hide_index=True)
-                else:
-                    st.warning("No recognizable HL7 segments found in message.")
-            except Exception as e:
-                st.error(f"❌ Parser Error: {str(e)}")
-
+        # We save the button click as a variable instead of running the logic inside the column
+        parse_clicked = st.button("Parse & Map to Database ⚡", key="hl7_parse")
+        
     with btn_col2:
-        # If the user clicks reset, we delete the saved state and rerun the app instantly
         if st.button("Reset Sandbox 🔄", key="hl7_reset"):
             if "default_hl7" in st.session_state:
                 del st.session_state.default_hl7
-            st.rerun()
+            st.rerun() 
+
+    # 2. Run the parsing logic down here in the main, wide part of the page!
+    if parse_clicked:
+        try:
+            lines = user_hl7.strip().split('\n')
+            parsed_results = []
+            
+            for line in lines:
+                fields = line.split('|')
+                segment = fields[0]
+                
+                if segment == 'PID' and len(fields) > 5:
+                    parsed_results.append({
+                        'HL7 Position': 'PID-3',
+                        'Field Name': 'Patient Identifier (MRN)',
+                        'Extracted Value': fields[3],
+                        'Data Type': 'CX',
+                        'DB Destination': 'patients.mrn'
+                    })
+                    parsed_results.append({
+                        'HL7 Position': 'PID-5',
+                        'Field Name': 'Patient Name',
+                        'Extracted Value': fields[5],
+                        'Data Type': 'XPN',
+                        'DB Destination': 'patients.last_name / patients.first_name'
+                    })
+                
+                elif segment == 'OBR' and len(fields) > 3:
+                    parsed_results.append({
+                        'HL7 Position': 'OBR-2',
+                        'Field Name': 'Placer Order Number',
+                        'Extracted Value': fields[2],
+                        'Data Type': 'EI',
+                        'DB Destination': 'orders.order_id'
+                    })
+                    parsed_results.append({
+                        'HL7 Position': 'OBR-4',
+                        'Field Name': 'Test Code (LOINC)',
+                        'Extracted Value': fields[4],
+                        'Data Type': 'CE',
+                        'DB Destination': 'lab_results.loinc_code'
+                    })
+                
+                elif segment == 'OBX' and len(fields) > 5:
+                    parsed_results.append({
+                        'HL7 Position': 'OBX-3',
+                        'Field Name': 'Observation Identifier',
+                        'Extracted Value': fields[3],
+                        'Data Type': 'CE',
+                        'DB Destination': 'loinc_map.loinc_code'
+                    })
+                    parsed_results.append({
+                        'HL7 Position': 'OBX-5',
+                        'Field Name': 'Result Value',
+                        'Extracted Value': fields[5],
+                        'Data Type': 'ST',
+                        'DB Destination': 'lab_results.result_value'
+                    })
+            
+            if parsed_results:
+                parsed_df = pd.DataFrame(parsed_results)
+                st.success("✅ HL7 message parsed successfully!")
+                st.markdown("#### Extracted Field Mapping")
+                # Because this is no longer trapped in the column, it will span the full width!
+                st.dataframe(parsed_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("No recognizable HL7 segments found in message.")
+        except Exception as e:
+            st.error(f"❌ Parser Error: {str(e)}")
             
     
     # --- 3. INTERFACE ERROR LOG TABLE ---
