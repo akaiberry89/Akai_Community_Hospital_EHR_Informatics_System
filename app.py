@@ -109,6 +109,16 @@ def init_portfolio_db(current_date):
         );
     ''')
 
+    cursor.execute('''
+        CREATE TABLE error_logs (
+          error_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+          segment_location TEXT,
+          error_severity TEXT,
+          clinical_description TEXT
+        );
+    ''')
+
     # NATIVE SQLITE TRIGGERS (REPLICATING YOUR POSTGRESQL PL/pgSQL LOGIC)
     cursor.execute('''
         CREATE TRIGGER trg_audit_insert_patients AFTER INSERT ON patients
@@ -153,6 +163,17 @@ def init_portfolio_db(current_date):
     cursor.executemany("INSERT OR IGNORE INTO loinc_map VALUES (?, ?, ?, ?);", loinc_data)
 
     cursor.execute("INSERT INTO users (username, display_name, role) VALUES ('sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin');")
+    
+    # SEED ERROR LOGS
+    error_log_data = [
+        ('2026-09-30 14:23:45', 'PID-3', 'Critical', 'Inbound message rejected: Missing required Patient Identifier (MRN) placeholder. Cannot map to patients.mrn.'),
+        ('2026-09-30 13:15:22', 'OBR-4', 'High', 'Validation fault: LOINC code "9999-9" is not in reference master. Accession ACC-100089 held pending reconciliation.'),
+        ('2026-09-30 12:07:38', 'OBX-5', 'Medium', 'Result value truncated: Expected numeric value, received text string "Pending". Stored as preliminary result.')
+    ]
+    cursor.executemany(
+        "INSERT INTO error_logs (timestamp, segment_location, error_severity, clinical_description) VALUES (?, ?, ?, ?);",
+        error_log_data
+    )
     
     providers = ["Dr. Evelyn Martinez, MD", "Dr. Marcus Vance, MD", "Dr. Sarah Lin, DO"]
     departments = ["Emergency Department", "Cardiology", "Oncology", "Orthopedics", "Internal Medicine", "Pediatrics"]
@@ -544,39 +565,13 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
     # --- 3. INTERFACE ERROR LOG TABLE ---
     st.markdown("#### ⚠️ Interface Error Feed")
     
-    # Generate dynamic error rows based on day of week
-    base_errors = [
-        {
-            'Timestamp': '2026-09-30 14:23:45',
-            'Segment': 'PID-3',
-            'Severity': 'Critical',
-            'Description': 'Inbound message rejected: Missing required Patient Identifier (MRN) placeholder. Cannot map to patients.mrn.'
-        },
-        {
-            'Timestamp': '2026-09-30 13:15:22',
-            'Segment': 'OBR-4',
-            'Severity': 'High',
-            'Description': 'Validation fault: LOINC code "9999-9" is not in reference master. Accession ACC-100089 held pending reconciliation.'
-        },
-        {
-            'Timestamp': '2026-09-30 12:07:38',
-            'Segment': 'OBX-5',
-            'Severity': 'Medium',
-            'Description': 'Result value truncated: Expected numeric value, received text string "Pending". Stored as preliminary result.'
-        },
-    ]
+    # Query error_logs table from database
+    error_df = pd.read_sql_query("SELECT error_id, timestamp, segment_location, error_severity, clinical_description FROM error_logs ORDER BY timestamp DESC", db_conn)
     
-    # Add extra errors on Thursday-Sunday
-    if days_since_monday >= 3:
-        base_errors.append({
-            'Timestamp': '2026-09-30 11:42:10',
-            'Segment': 'MSH-9',
-            'Severity': 'High',
-            'Description': 'Message type mismatch: Expected ORU^R01, received ADT^A01. Message routed to dead-letter queue for manual review.'
-        })
-    
-    error_df = pd.DataFrame(base_errors)
-    st.dataframe(error_df, use_container_width=True, hide_index=True)
+    if len(error_df) > 0:
+        st.dataframe(error_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No interface errors logged.")
 
 with tab_query:
     st.markdown("### 💻 Enterprise SQL Sandbox Console")
