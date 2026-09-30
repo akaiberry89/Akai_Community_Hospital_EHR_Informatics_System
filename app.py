@@ -53,6 +53,7 @@ def init_portfolio_db(current_date):
           order_id INTEGER PRIMARY KEY AUTOINCREMENT,
           patient_id INT NOT NULL REFERENCES patients(patient_id),
           ordering_provider TEXT,
+          department TEXT,
           order_datetime TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'ordered' CHECK (status IN ('ordered', 'active', 'received', 'completed', 'canceled')),
           created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -154,6 +155,7 @@ def init_portfolio_db(current_date):
     cursor.execute("INSERT INTO users (username, display_name, role) VALUES ('sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin');")
     
     providers = ["Dr. Evelyn Martinez, MD", "Dr. Marcus Vance, MD", "Dr. Sarah Lin, DO"]
+    departments = ["Emergency Department", "Cardiology", "Oncology", "Orthopedics", "Internal Medicine", "Pediatrics"]
     specimen_types = ["Whole Blood", "Serum", "Plasma", "Random Urine"]
     flags = ['normal', 'normal', 'normal', 'abnormal', 'critical']
     rejection_reasons = ['Hemolyzed', 'Quantity Not Sufficient (QNS)', 'Unlabeled Specimen', 'Incorrect Container Type']
@@ -194,6 +196,10 @@ def init_portfolio_db(current_date):
         minute_offset = random.randint(0, 59)
         patient_created_time = patient_day.replace(hour=hour_offset, minute=minute_offset, second=random.randint(0, 59))
         
+        # Ensure patient creation time is not in the future
+        if patient_created_time > now:
+            patient_created_time = now - timedelta(hours=random.randint(1, 6))
+        
         # Patient Data
         mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
         sex = random.choice(['M', 'F'])
@@ -209,6 +215,7 @@ def init_portfolio_db(current_date):
         num_orders = random.randint(1, 2)
         for ord_idx in range(num_orders):
             prov = random.choice(providers)
+            dept = random.choice(departments)
             ord_status = random.choices(status_options, weights=status_weights, k=1)[0]
             
             # Orders created after patient creation, but within the same day or next few hours
@@ -221,8 +228,8 @@ def init_portfolio_db(current_date):
             
             ord_date = order_time.strftime("%Y-%m-%d %H:%M")
             
-            cursor.execute("INSERT INTO orders (patient_id, ordering_provider, order_datetime, status, created_at) VALUES (?, ?, ?, ?, ?);",
-                           (patient_id, prov, ord_date, ord_status, order_time.strftime("%Y-%m-%d %H:%M:%S")))
+            cursor.execute("INSERT INTO orders (patient_id, ordering_provider, department, order_datetime, status, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           (patient_id, prov, dept, ord_date, ord_status, order_time.strftime("%Y-%m-%d %H:%M:%S")))
             order_id = cursor.lastrowid
             
             acc_num = f"ACC-{100000 + order_id}"
@@ -288,11 +295,12 @@ if criticals > 0:
 st.markdown("### 📊 Enterprise Ledger Workspace")
 
 # --- 4. NAVIGATION VIEW INTERFACES ---
-tab_patients, tab_orders, tab_specimens, tab_results, tab_audit, tab_query = st.tabs([
+tab_patients, tab_orders, tab_specimens, tab_results, tab_departments, tab_audit, tab_query = st.tabs([
     "👤 patients Table", 
     "📋 orders Table", 
     "🧪 specimens Table", 
     "🔬 lab_results Table",
+    "🏢 Department Analytics",
     "🔒 audit_log Table",
     "💻 SQL Query Console"
 ])
@@ -306,7 +314,7 @@ with tab_patients:
 with tab_orders:
     st.markdown("### 📋 orders Transactional Table")
     st.markdown("Tracks provider order requests mapped back to unique Patient IDs via foreign key constraints.")
-    orders_df = pd.read_sql_query("SELECT order_id, patient_id, ordering_provider, order_datetime, status, created_at FROM orders ORDER BY created_at DESC", db_conn)
+    orders_df = pd.read_sql_query("SELECT order_id, patient_id, ordering_provider, department, order_datetime, status, created_at FROM orders ORDER BY created_at DESC", db_conn)
     st.dataframe(orders_df, use_container_width=True, hide_index=True)
 
 with tab_specimens:
@@ -337,6 +345,57 @@ with tab_results:
     """
     res_df = pd.read_sql_query(res_query, db_conn)
     st.dataframe(res_df, use_container_width=True, hide_index=True)
+
+with tab_departments:
+    st.markdown("### 🏢 Department Order Analytics")
+    st.markdown("Departmental order volume, status breakdown, and test ordering patterns.")
+    
+    # Overall department order volume
+    st.markdown("#### 📊 Orders by Department")
+    dept_volume = pd.read_sql_query("""
+        SELECT department, COUNT(order_id) as total_orders
+        FROM orders
+        GROUP BY department
+        ORDER BY total_orders DESC
+    """, db_conn)
+    st.bar_chart(data=dept_volume, x="department", y="total_orders", color="#ff6b6b")
+    
+    # Department order status breakdown
+    st.markdown("#### 📈 Order Status by Department")
+    dept_status = pd.read_sql_query("""
+        SELECT department, status, COUNT(order_id) as count
+        FROM orders
+        GROUP BY department, status
+        ORDER BY department, status
+    """, db_conn)
+    st.dataframe(dept_status, use_container_width=True, hide_index=True)
+    
+    # Test type by department
+    st.markdown("#### 🧬 Specimen Types Ordered by Department")
+    dept_specimens = pd.read_sql_query("""
+        SELECT o.department, s.specimen_type, COUNT(s.specimen_id) as count
+        FROM orders o
+        JOIN specimens s ON o.order_id = s.order_id
+        GROUP BY o.department, s.specimen_type
+        ORDER BY o.department, count DESC
+    """, db_conn)
+    st.dataframe(dept_specimens, use_container_width=True, hide_index=True)
+    
+    # Department summary table
+    st.markdown("#### 📋 Detailed Department Summary")
+    dept_summary = pd.read_sql_query("""
+        SELECT 
+            o.department,
+            COUNT(DISTINCT o.order_id) as total_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 'completed' THEN o.order_id END) as completed,
+            COUNT(DISTINCT CASE WHEN o.status = 'ordered' THEN o.order_id END) as ordered,
+            COUNT(DISTINCT CASE WHEN o.status = 'canceled' THEN o.order_id END) as canceled,
+            COUNT(DISTINCT o.patient_id) as unique_patients
+        FROM orders o
+        GROUP BY o.department
+        ORDER BY total_orders DESC
+    """, db_conn)
+    st.dataframe(dept_summary, use_container_width=True, hide_index=True)
 
 with tab_audit:
     st.markdown("### 🔒 audit_log Compliance System Log")
