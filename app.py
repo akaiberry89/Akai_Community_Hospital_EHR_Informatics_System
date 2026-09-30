@@ -13,16 +13,11 @@ st.set_page_config(
 
 # --- 2. SELF-CONTAINED DATABASE INITIALIZATION ---
 @st.cache_resource
-def init_portfolio_db():
+def init_portfolio_db(current_date):
     """
     Builds an in-memory SQLite database mimicking the PostgreSQL/T-SQL DDL schema.
     Applies native SQLite database triggers to automate HIPAA Compliance Audit Logs.
-    
-    Temporal behavior:
-    - Database resets every Sunday at midnight (UTC)
-    - 500 baseline patients, +50 per day of the week
-    - All timestamps are historical (never in the future)
-    - Realistic progression: patient registration → order → specimen → results
+    Distributes patient and order data throughout the current week with realistic timestamps.
     """
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     cursor = conn.cursor()
@@ -58,6 +53,7 @@ def init_portfolio_db():
           order_id INTEGER PRIMARY KEY AUTOINCREMENT,
           patient_id INT NOT NULL REFERENCES patients(patient_id),
           ordering_provider TEXT,
+          department TEXT,
           order_datetime TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'ordered' CHECK (status IN ('ordered', 'active', 'received', 'completed', 'canceled')),
           created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -113,6 +109,16 @@ def init_portfolio_db():
         );
     ''')
 
+    cursor.execute('''
+        CREATE TABLE error_logs (
+          error_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+          segment_location TEXT,
+          error_severity TEXT,
+          clinical_description TEXT
+        );
+    ''')
+
     # NATIVE SQLITE TRIGGERS (REPLICATING YOUR POSTGRESQL PL/pgSQL LOGIC)
     cursor.execute('''
         CREATE TRIGGER trg_audit_insert_patients AFTER INSERT ON patients
@@ -158,188 +164,432 @@ def init_portfolio_db():
 
     cursor.execute("INSERT INTO users (username, display_name, role) VALUES ('sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin');")
     
+    # SEED ERROR LOGS
+    error_log_data = [
+        ('2026-09-30 14:23:45', 'PID-3', 'Critical', 'Inbound message rejected: Missing required Patient Identifier (MRN) placeholder. Cannot map to patients.mrn.'),
+        ('2026-09-30 13:15:22', 'OBR-4', 'High', 'Validation fault: LOINC code "9999-9" is not in reference master. Accession ACC-100089 held pending reconciliation.'),
+        ('2026-09-30 12:07:38', 'OBX-5', 'Medium', 'Result value truncated: Expected numeric value, received text string "Pending". Stored as preliminary result.')
+    ]
+    cursor.executemany(
+        "INSERT INTO error_logs (timestamp, segment_location, error_severity, clinical_description) VALUES (?, ?, ?, ?);",
+        error_log_data
+    )
+    
     providers = ["Dr. Evelyn Martinez, MD", "Dr. Marcus Vance, MD", "Dr. Sarah Lin, DO"]
+    departments = ["Emergency Department", "Cardiology", "Oncology", "Orthopedics", "Internal Medicine", "Pediatrics"]
     specimen_types = ["Whole Blood", "Serum", "Plasma", "Random Urine"]
     flags = ['normal', 'normal', 'normal', 'abnormal', 'critical']
     rejection_reasons = ['Hemolyzed', 'Quantity Not Sufficient (QNS)', 'Unlabeled Specimen', 'Incorrect Container Type']
     status_options = ['completed', 'ordered', 'received', 'active', 'canceled']
     status_weights = [70, 15, 8, 5, 2]
 
+    # Import faker for realistic data generation
     from faker import Faker
     fake = Faker()
 
-    # --- TEMPORAL ENGINE: RESET EVERY SUNDAY ---
+    # --- TEMPORAL ENGINE INITIALIZATION ---
     now = datetime.now()
-    days_since_monday = now.weekday()  # Monday=0, Sunday=6
-    start_of_week = now - timedelta(days=days_since_monday)
     
-    # Dynamic patient count: 500 baseline + 50 per day
+    # 1. Determine the baseline anchor (Find the start of the current week - Monday)
+    days_since_monday = now.weekday()  # Monday = 0, Tuesday = 1, etc.
+    start_of_week = now - timedelta(days=days_since_monday)
+    # Set to 00:00:00 on Monday
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # 2. Dynamic Count Calculations (500 Baseline + 50 additions for every passing day)
     patients_to_generate = 500 + (days_since_monday * 50)
     
-    # Seed for reproducibility
+    # 3. Synchronize the Random Matrix Seed for consistency across refreshes
     random.seed(int(now.strftime("%Y%m%d")))
     fake.seed_instance(int(now.strftime("%Y%m%d")))
 
-    # Generate patients distributed across the week
-        # Generate patients distributed across the week
+    # --- SEEDING ENGINE TRACK ---
+    # Distribute patients across the week (Monday through today)
+    # Each day gets patients distributed across 24 hours with realistic hospital hours (7 AM - 11 PM)
+    
     for idx in range(1, patients_to_generate + 1):
-        day_offset = random.randint(0, days_since_monday)
-        hour_offset = random.randint(6, 22)
+        # Determine which day this patient should be created on
+        day_offset = (idx - 1) % max(1, (days_since_monday + 1))  # Spread across days so far this week
+        patient_day = start_of_week + timedelta(days=day_offset)
+        
+        # Distribute within hospital hours (7 AM to 11 PM)
+        hour_offset = random.randint(7, 22)
         minute_offset = random.randint(0, 59)
+        patient_created_time = patient_day.replace(hour=hour_offset, minute=minute_offset, second=random.randint(0, 59))
         
-        patient_created_time = start_of_week + timedelta(
-            days=day_offset, hours=hour_offset, minutes=minute_offset
-        )
-        
+        # Ensure patient creation time is not in the future
         if patient_created_time > now:
-            patient_created_time = now - timedelta(hours=random.randint(2, 8))
+            patient_created_time = now - timedelta(hours=random.randint(1, 6))
         
-        patient_created_str = patient_created_time.strftime("%Y-%m-%d %H:%M:%S")
-        
+        # Patient Data
         mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
         sex = random.choice(['M', 'F'])
         first = fake.first_name_male() if sex == 'M' else fake.first_name_female()
         last = fake.last_name()
         dob = fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y-%m-%d")
         
-        cursor.execute(
-            "INSERT INTO patients (mrn, first_name, last_name, dob, sex, created_at) VALUES (?, ?, ?, ?, ?, ?);",
-            (mrn, first, last, dob, sex, patient_created_str)
-        )
+        # Insert patient with explicit created_at timestamp
+        cursor.execute("INSERT INTO patients (mrn, first_name, last_name, dob, sex, created_at) VALUES (?, ?, ?, ?, ?, ?);", 
+                       (mrn, first, last, dob, sex, patient_created_time.strftime("%Y-%m-%d %H:%M:%S")))
+        patient_id = cursor.lastrowid
         
-        # 25% chance this patient has an associated order sequence to simulate realistic hospital workflows
-        if random.random() < 0.25:
+        num_orders = random.randint(1, 2)
+        for ord_idx in range(num_orders):
             prov = random.choice(providers)
-            order_time = patient_created_time + timedelta(minutes=random.randint(15, 120))
-            order_time_str = order_time.strftime("%Y-%m-%d %H:%M:%S")
-            status = random.choices(status_options, weights=status_weights, k=1)[0]
+            dept = random.choice(departments)
+            ord_status = random.choices(status_options, weights=status_weights, k=1)[0]
             
-            cursor.execute(
-                "INSERT INTO orders (patient_id, ordering_provider, order_datetime, status, created_at) VALUES (?, ?, ?, ?, ?);",
-                (idx, prov, order_time_str, status, order_time_str)
-            )
+            # Orders created after patient creation, but within the same day or next few hours
+            hours_after_patient = random.randint(0, 12)
+            order_time = patient_created_time + timedelta(hours=hours_after_patient)
             
-            if status in ['received', 'active', 'completed']:
-                acc = f"ACC-{fake.unique.random_number(digits=6, fix_len=True)}"
-                spec_type = random.choice(specimen_types)
-                coll_time = order_time + timedelta(minutes=random.randint(5, 30))
-                rec_time = coll_time + timedelta(minutes=random.randint(20, 60))
+            # Make sure order doesn't go past current time
+            if order_time > now:
+                order_time = now - timedelta(hours=random.randint(1, 6))
+            
+            ord_date = order_time.strftime("%Y-%m-%d %H:%M")
+            
+            cursor.execute("INSERT INTO orders (patient_id, ordering_provider, department, order_datetime, status, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           (patient_id, prov, dept, ord_date, ord_status, order_time.strftime("%Y-%m-%d %H:%M:%S")))
+            order_id = cursor.lastrowid
+            
+            acc_num = f"ACC-{100000 + order_id}"
+            spec_type = random.choice(specimen_types)
+            rej = random.choice(rejection_reasons) if ord_status == 'canceled' else None
+            
+            cursor.execute("INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, rejection_reason, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                           (order_id, acc_num, spec_type, ord_date, rej, order_time.strftime("%Y-%m-%d %H:%M:%S")))
+            specimen_id = cursor.lastrowid
+            
+            if ord_status == 'completed':
+                loinc = random.choice(loinc_data)[0]  # Get the LOINC code
+                res_flag = random.choice(flags)
+                res_val = f"{random.uniform(10.0, 150.0):.1f}" if res_flag == 'normal' else f"{random.uniform(151.0, 300.0):.1f}"
                 
-                cursor.execute(
-                    "INSERT INTO specimens (order_id, accession_number, specimen_type, collection_datetime, received_datetime, status) VALUES (?, ?, ?, ?, ?, ?);",
-                    (idx, acc, spec_type, coll_time.strftime("%Y-%m-%d %H:%M:%S"), rec_time.strftime("%Y-%m-%d %H:%M:%S"), status)
-                )
+                # Result time is a bit after order
+                result_time = order_time + timedelta(hours=random.randint(1, 8))
+                if result_time > now:
+                    result_time = now - timedelta(hours=random.randint(0, 3))
                 
-                if status == 'completed':
-                    loinc = random.choice(loinc_data)[0]
-                    res_val = str(random.randint(75, 115)) if loinc == '2345-7' else f"{random.uniform(12.0, 16.5):.1f}"
-                    flag = random.choice(['normal', 'normal', 'abnormal'])
-                    res_time = rec_time + timedelta(minutes=random.randint(15, 45))
-                    
-                    cursor.execute(
-                        "INSERT INTO lab_results (specimen_id, loinc_code, status, result_value, result_flag, result_datetime) VALUES (?, ?, ?, ?, ?, ?);",
-                        (idx, loinc, 'final', res_val, flag, res_time.strftime("%Y-%m-%d %H:%M:%S"))
-                    )
-
+                cursor.execute("INSERT INTO lab_results (specimen_id, loinc_code, result_value, result_flag, result_datetime, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+                               (specimen_id, loinc, res_val, res_flag, result_time.strftime("%Y-%m-%d %H:%M:%S"), result_time.strftime("%Y-%m-%d %H:%M:%S")))
+                
     conn.commit()
     return conn
 
-# --- 3. RE-INITIALIZE DATABASE FRAMEWORK ---
-now = datetime.now()
-days_since_monday = now.weekday()
-conn = init_portfolio_db(now)
-cursor = conn.cursor()
+# Connect to database instance
+today = datetime.now().date()
+db_conn = init_portfolio_db(today)
 
-# --- 4. RENDER DASHBOARD TABS ---
-# Appending your custom HL7 tab directly into the horizontal alignment array
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+# --- 3. DASHBOARD ARCHITECTURE ---
+st.title("🏥 Akai Community Hospital EHR Informatics Platform")
+st.subheader("Laboratory Information System (LIS) Enterprise Reporting Module")
+st.markdown("---")
+
+# Sidebar Configuration
+st.sidebar.header("🎛️ Laboratory Controls")
+st.sidebar.info("Use the main panel tabs to alternate between clinical registries and background security structures.")
+
+# Stack your new dynamic data telemetry
+st.sidebar.caption(f"📅 **System Local Clock:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.sidebar.info(
+    f"📡 **Operational Data Telemetry:** This portal simulates a live EHR inbound network stream. "
+    f"The database scales dynamically based on the current day of the week "
+    f"and will execute an automated schema reset cycle every Sunday at midnight."
+)
+
+# Data Aggregation via Live Queries
+total_pats = int(pd.read_sql_query("SELECT COUNT(*) FROM patients", db_conn).iloc[0, 0])
+total_orders = int(pd.read_sql_query("SELECT COUNT(*) FROM orders", db_conn).iloc[0, 0])
+criticals = int(pd.read_sql_query("SELECT COUNT(*) FROM lab_results WHERE result_flag = 'critical'", db_conn).iloc[0, 0])
+
+# Columns Layout for Executive KPI Tracking
+m_col1, m_col2, m_col3 = st.columns(3)
+m_col1.metric("Total Patients Managed", total_pats)
+m_col2.metric("Total Relational Orders Placed", total_orders)
+m_col3.metric("🚨 Active Critical Flags", criticals)
+
+# Conditional Security Banner
+if criticals > 0:
+    st.error(f"🚨 **PATIENT SAFETY WARNING:** There are {criticals} unverified clinical panic values pending review.")
+
+st.markdown("### 📊 Enterprise Ledger Workspace")
+
+# --- 4. NAVIGATION VIEW INTERFACES ---
+tab_patients, tab_orders, tab_specimens, tab_results, tab_departments, tab_audit, tab_hl7, tab_query = st.tabs([
     "👤 patients Table", 
     "📋 orders Table", 
     "🧪 specimens Table", 
-    "📊 lab_results Table", 
-    "📟 HL7 Interface Monitor"
+    "🔬 lab_results Table",
+    "🏢 Department Analytics",
+    "🔒 audit_log Table",
+    "📟 HL7 Interface Monitor",
+    "💻 SQL Query Console"
 ])
 
-with tab1:
-    st.subheader("Patients Ledger (Read-Only)")
-    st.dataframe(pd.read_sql_query("SELECT * FROM patients ORDER BY created_at DESC", conn), use_container_width=True)
+with tab_patients:
+    st.markdown("### 👤 patients Registry Table")
+    st.markdown("Raw transactional rows from the `patients` schema table, tracking MRNs and patient demographics.")
+    pats_df = pd.read_sql_query("SELECT patient_id, mrn, first_name, last_name, dob, sex, created_at FROM patients ORDER BY created_at DESC", db_conn)
+    st.dataframe(pats_df, use_container_width=True, hide_index=True)
 
-with tab2:
-    st.subheader("Orders Log")
-    st.dataframe(pd.read_sql_query("SELECT * FROM orders", conn), use_container_width=True)
+with tab_orders:
+    st.markdown("### 📋 orders Transactional Table")
+    st.markdown("Tracks provider order requests mapped back to unique Patient IDs via foreign key constraints.")
+    orders_df = pd.read_sql_query("SELECT order_id, patient_id, ordering_provider, department, order_datetime, status, created_at FROM orders ORDER BY created_at DESC", db_conn)
+    st.dataframe(orders_df, use_container_width=True, hide_index=True)
 
-with tab3:
-    st.subheader("Specimens Ledger")
-    st.dataframe(pd.read_sql_query("SELECT * FROM specimens", conn), use_container_width=True)
-
-with tab4:
-    st.subheader("Verified Results")
-    st.dataframe(pd.read_sql_query("SELECT * FROM lab_results", conn), use_container_width=True)
-
-# 🚀 YOUR NEW INTERACTIVE HL7 TAB SCRIPT 🚀
-with tab5:
-    st.header("📟 HL7 Interface Dashboard & Monitor")
-    st.markdown("Simulating streaming clinical transactions aligned with our database temporal framework.")
+with tab_specimens:
+    st.markdown("### 🧪 specimens Tracking Table")
+    st.markdown("Logs physical sample status, processing benchmarks, and automated rejection flags.")
     
-    # 1. DYNAMIC METRICS: Connected directly to your current patient load
+    # 📈 Added an executive bar chart to track rejection rules visually
+    st.markdown("#### Turnaround Time Tracking by Specimen Type")
+    chart_df = pd.read_sql_query("""
+        SELECT s.specimen_type, COUNT(o.order_id) as total_volume
+        FROM specimens s
+        JOIN orders o ON s.order_id = o.order_id
+        GROUP BY s.specimen_type
+    """, db_conn)
+    st.bar_chart(data=chart_df, x="specimen_type", y="total_volume", color="#4b7eff")
+    
+    spec_df = pd.read_sql_query("SELECT specimen_id, order_id, accession_number, specimen_type, collection_datetime, rejection_reason, created_at FROM specimens ORDER BY created_at DESC", db_conn)
+    st.dataframe(spec_df, use_container_width=True, hide_index=True)
+
+with tab_results:
+    st.markdown("### 🔬 lab_results Structured View")
+    st.markdown("Normalized transactional data linked to standard LOINC master mapping protocols.")
+    res_query = """
+        SELECT r.result_id, r.specimen_id, lm.test_name, r.result_value, lm.units, lm.ref_range, r.result_flag, r.status, r.created_at
+        FROM lab_results r
+        JOIN loinc_map lm ON r.loinc_code = lm.loinc_code
+        ORDER BY r.created_at DESC
+    """
+    res_df = pd.read_sql_query(res_query, db_conn)
+    st.dataframe(res_df, use_container_width=True, hide_index=True)
+
+with tab_departments:
+    st.markdown("### 🏢 Department Order Analytics")
+    st.markdown("Departmental order volume, status breakdown, and test ordering patterns.")
+    
+    # Overall department order volume
+    st.markdown("#### 📊 Orders by Department")
+    dept_volume = pd.read_sql_query("""
+        SELECT department, COUNT(order_id) as total_orders
+        FROM orders
+        GROUP BY department
+        ORDER BY total_orders DESC
+    """, db_conn)
+    st.bar_chart(data=dept_volume, x="department", y="total_orders", color="#ff6b6b")
+    
+    # Department order status breakdown
+    st.markdown("#### 📈 Order Status by Department")
+    dept_status = pd.read_sql_query("""
+        SELECT department, status, COUNT(order_id) as count
+        FROM orders
+        GROUP BY department, status
+        ORDER BY department, status
+    """, db_conn)
+    st.dataframe(dept_status, use_container_width=True, hide_index=True)
+    
+    # Test type by department
+    st.markdown("#### 🧬 Specimen Types Ordered by Department")
+    dept_specimens = pd.read_sql_query("""
+        SELECT o.department, s.specimen_type, COUNT(s.specimen_id) as count
+        FROM orders o
+        JOIN specimens s ON o.order_id = s.order_id
+        GROUP BY o.department, s.specimen_type
+        ORDER BY o.department, count DESC
+    """, db_conn)
+    st.dataframe(dept_specimens, use_container_width=True, hide_index=True)
+    
+    # Department summary table
+    st.markdown("#### 📋 Detailed Department Summary")
+    dept_summary = pd.read_sql_query("""
+        SELECT 
+            o.department,
+            COUNT(DISTINCT o.order_id) as total_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 'completed' THEN o.order_id END) as completed,
+            COUNT(DISTINCT CASE WHEN o.status = 'ordered' THEN o.order_id END) as ordered,
+            COUNT(DISTINCT CASE WHEN o.status = 'canceled' THEN o.order_id END) as canceled,
+            COUNT(DISTINCT o.patient_id) as unique_patients
+        FROM orders o
+        GROUP BY o.department
+        ORDER BY total_orders DESC
+    """, db_conn)
+    st.dataframe(dept_summary, use_container_width=True, hide_index=True)
+
+with tab_audit:
+    st.markdown("### 🔒 audit_log Compliance System Log")
+    st.info("Immutable Tracking Log: Captured natively via operational database triggers to guarantee absolute security monitoring.")
+    audit_df = pd.read_sql_query("SELECT audit_id, user_id, object_type, object_id, action, action_time, detail FROM audit_log ORDER BY audit_id DESC", db_conn)
+    st.dataframe(audit_df, use_container_width=True, hide_index=True)
+
+with tab_hl7:
+    st.markdown("### 📟 HL7 Interface Monitor")
+    st.markdown("Real-time HL7 v2.5 message ingestion, parsing, and validation framework.")
+    
+    # --- 1. DYNAMIC KPI SUMMARY ROW ---
+    now = datetime.now()
+    days_since_monday = now.weekday()
     total_messages = 150 + (days_since_monday * 225)
-    faults = int(total_messages * 0.005) + 1
-    successes = total_messages - faults
+    successful_ingestions = int(total_messages * 0.995)
+    validation_faults = total_messages - successful_ingestions
     
-    m_col1, m_col2, m_col3 = st.columns(3)
-    m_col1.metric("Weekly Transaction Volume", f"{total_messages:,}", f"+225/day")
-    m_col2.metric("Successful Ingestions (99.5%)", f"{successes:,}")
-    m_col3.metric("Validation Exceptions", f"{faults}", delta="-0.5% rate", delta_color="inverse")
+    st.markdown("#### 📊 HL7 Interface KPI Summary")
+    kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+    kpi_col1.metric("Total Messages (Weekly)", total_messages)
+    kpi_col2.metric("Successful Ingestions", f"{successful_ingestions} (99.5%)")
+    kpi_col3.metric("Validation Faults", f"{validation_faults} (0.5%)")
     
-    # 2. RUN REAL-TIME DATA QUERY TO EXTRACT PATIENT FOR THE SANDBOX
+    # --- 2. LIVE PATIENT DATA SYNC & HL7 PARSER ---
+    st.markdown("#### 🧬 HL7 ORU^R01 Parser & Mapping Simulator")
+    
+    # Fetch most recent patient from database
     try:
-        last_pt = cursor.execute("SELECT mrn, first_name, last_name FROM patients ORDER BY patient_id DESC LIMIT 1").fetchone()
-        sim_mrn = last_pt[0]
-        sim_last = last_pt[2]
-        sim_first = last_pt[1]
-    except Exception:
-        sim_mrn = "MRN12976560"
-        sim_last = "Zimmerman"
-        sim_first = "Amber"
-
-    # 3. INTERACTIVE PARSER SANDBOX
-    st.subheader("🧪 Inbound Message Parser Sandbox")
-    st.caption("ℹ️ **Analyst Guide:** HL7 v2 records separate blocks into **Segments** (lines) and values into **Fields** using vertical pipes (`|`). The patient identification is located in the `PID` segment, where the patient name lives specifically at field index `PID-5` by tracking empty field positions.")
+        recent_patient = pd.read_sql_query(
+            "SELECT mrn, first_name, last_name FROM patients ORDER BY created_at DESC LIMIT 1",
+            db_conn
+        )
+        if len(recent_patient) > 0:
+            live_mrn = recent_patient.iloc[0]['mrn']
+            live_first = recent_patient.iloc[0]['first_name']
+            live_last = recent_patient.iloc[0]['last_name']
+        else:
+            live_mrn = "MRN99999999"
+            live_first = "John"
+            live_last = "Doe"
+    except:
+        live_mrn = "MRN99999999"
+        live_first = "John"
+        live_last = "Doe"
     
-    raw_sample = (
-        f"MSH|^~\\&|LAB_SYSTEM|ACME_HOSP|LIS|RECEIVING|{now.strftime('%Y%m%d%H%M%S')}||ORU^R01|MSG123456|P|2.5|\n"
-        f"PID|1||{sim_mrn}||{sim_last}^{sim_first}|SMITH|19800515|M||\n"
-        f"OBR|1|ORD789|ACC-100123|2345-7^GLUCOSE||{now.strftime('%Y%m%d%H%M%S')}|||||||||||||||F||\n"
-        f"OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"
+    # Generate sample HL7 message using live data
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    sample_hl7 = f"""MSH|^~\\&|LAB_SYSTEM|ACME_HOSP|LIS|RECEIVING|{timestamp}||ORU^R01|MSG123456|P|2.5|
+PID|1||{live_mrn}||{live_last}^{live_first}|SMITH|19800515|M|||123 MAIN ST^^CITY^ST^12345||
+OBR|1|ORD789|ACC-100123|2345-7^GLUCOSE||{timestamp}|||||||||||||||F||
+OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
+    
+    st.info(
+        "**HL7 v2.5 Message Structure Reference:**\n\n"
+        "Each line in the raw message is a **Segment** (e.g., MSH, PID, OBR, OBX).\n"
+        "Each value within a segment is separated by a pipe (`|`) and represents a **Field**.\n"
+        "**Field counting starts at 0 after the segment identifier.**\n"
+        "- `PID-3` = Patient Identifier (MRN) — the 3rd field in the PID segment\n"
+        "- `PID-5` = Patient Name — the 5th field in the PID segment\n"
+        "- `OBR-2` = Placer Order Number (Accession) — the 2nd field in the OBR segment\n"
+        "- `OBX-5` = Result Value — the 5th field in the OBX segment"
     )
     
-    user_input = st.text_area("Inbound Transaction String Container (Editable)", raw_sample, height=180)
+    user_hl7 = st.text_area(
+        "Raw HL7 Message Input",
+        value=sample_hl7,
+        height=150
+    )
     
-    if st.button("Parse & Map to Database Parameters"):
-        lines = user_input.split('\n')
-        parsed_data = []
-        
-        for line in lines:
-            if line.startswith('PID'):
-                f = line.split('|')
-                if len(f) > 3: parsed_data.append({"HL7 Position": "PID-3", "Field Name": "Patient Identifier (MRN)", "Extracted Value": f[3], "Data Type": "CX (Composite ID)", "Database Target": "patients.mrn"})
-                if len(f) > 5: parsed_data.append({"HL7 Position": "PID-5", "Field Name": "Patient Full Name", "Extracted Value": f[5].replace('^', ', '), "Data Type": "XPN (Person Name)", "Database Target": "patients.last_name / first_name"})
-            if line.startswith('OBR'):
-                f = line.split('|')
-                if len(f) > 3: parsed_data.append({"HL7 Position": "OBR-3", "Field Name": "LIS Accession ID", "Extracted Value": f[3], "Data Type": "EI (Entity Identifier)", "Database Target": "specimens.accession_number"})
-            if line.startswith('OBX'):
-                f = line.split('|')
-                if len(f) > 3: parsed_data.append({"HL7 Position": "OBX-3", "Field Name": "Observation Identifier", "Extracted Value": f[3], "Data Type": "CE (Coded Element)", "Database Target": "lab_results.loinc_code"})
-                if len(f) > 5: parsed_data.append({"HL7 Position": "OBX-5", "Field Name": "Observation Result Value", "Extracted Value": f[5], "Data Type": "ST (String / Numeric)", "Database Target": "lab_results.result_value"})
-        
-        st.success("🎉 Transaction string broken down successfully! Visual parsing schema populated below.")
-        st.dataframe(pd.DataFrame(parsed_data), use_container_width=True)
+    if st.button("Parse & Map to Database ⚡", key="hl7_parse"):
+        try:
+            lines = user_hl7.strip().split('\n')
+            parsed_results = []
+            
+            for line in lines:
+                fields = line.split('|')
+                segment = fields[0]
+                
+                # Parse specific segments
+                if segment == 'PID' and len(fields) > 5:
+                    # PID-3: Patient Identifier (MRN)
+                    parsed_results.append({
+                        'HL7 Position': 'PID-3',
+                        'Field Name': 'Patient Identifier (MRN)',
+                        'Extracted Value': fields[3],
+                        'Data Type': 'CX',
+                        'DB Destination': 'patients.mrn'
+                    })
+                    # PID-5: Patient Name
+                    parsed_results.append({
+                        'HL7 Position': 'PID-5',
+                        'Field Name': 'Patient Name',
+                        'Extracted Value': fields[5],
+                        'Data Type': 'XPN',
+                        'DB Destination': 'patients.last_name / patients.first_name'
+                    })
+                
+                elif segment == 'OBR' and len(fields) > 3:
+                    # OBR-2: Placer Order Number
+                    parsed_results.append({
+                        'HL7 Position': 'OBR-2',
+                        'Field Name': 'Placer Order Number',
+                        'Extracted Value': fields[2],
+                        'Data Type': 'EI',
+                        'DB Destination': 'orders.order_id'
+                    })
+                    # OBR-4: Universal Service Identifier (Test Code)
+                    parsed_results.append({
+                        'HL7 Position': 'OBR-4',
+                        'Field Name': 'Test Code (LOINC)',
+                        'Extracted Value': fields[4],
+                        'Data Type': 'CE',
+                        'DB Destination': 'lab_results.loinc_code'
+                    })
+                
+                elif segment == 'OBX' and len(fields) > 5:
+                    # OBX-3: Observation Identifier
+                    parsed_results.append({
+                        'HL7 Position': 'OBX-3',
+                        'Field Name': 'Observation Identifier',
+                        'Extracted Value': fields[3],
+                        'Data Type': 'CE',
+                        'DB Destination': 'loinc_map.loinc_code'
+                    })
+                    # OBX-5: Observation Value
+                    parsed_results.append({
+                        'HL7 Position': 'OBX-5',
+                        'Field Name': 'Result Value',
+                        'Extracted Value': fields[5],
+                        'Data Type': 'ST',
+                        'DB Destination': 'lab_results.result_value'
+                    })
+            
+            if parsed_results:
+                parsed_df = pd.DataFrame(parsed_results)
+                st.success("✅ HL7 message parsed successfully!")
+                st.markdown("#### Extracted Field Mapping")
+                st.dataframe(parsed_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("No recognizable HL7 segments found in message.")
+        except Exception as e:
+            st.error(f"❌ Parser Error: {str(e)}")
+    
+    # --- 3. INTERFACE ERROR LOG TABLE ---
+    st.markdown("#### ⚠️ Interface Error Feed")
+    
+    # Query error_logs table from database
+    error_df = pd.read_sql_query("SELECT error_id, timestamp, segment_location, error_severity, clinical_description FROM error_logs ORDER BY timestamp DESC", db_conn)
+    
+    if len(error_df) > 0:
+        st.dataframe(error_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No interface errors logged.")
 
-    # 4. HISTORICAL PROCESSING EXCEPTIONS LOG
-    st.subheader("⚠️ Interface Error Processing Logs")
-    err_data = [
-        {"Timestamp": "2026-09-30 14:23:45", "Segment": "PID-3", "Severity": "Critical", "Clinical Description": "Inbound message rejected: Missing required Patient Identifier (MRN) placeholder. Cannot map to patients.mrn."},
-        {"Timestamp": "2026-09-30 13:15:22", "Segment": "OBR-4", "Severity": "High", "Clinical Description": "Validation fault: LOINC code \"9999-9\" is not in reference master. Accession ACC-100089 held pending reconciliation."},
-        {"Timestamp": "2026-09-30 12:07:38", "Segment": "OBX-5", "Severity": "Medium", "Clinical Description": "Result value truncated: Expected numeric value, received text string \"Pending\". Stored as preliminary result."}
-    ]
-    st.dataframe(pd.DataFrame(err_data), use_container_width=True)
+with tab_query:
+    st.markdown("### 💻 Enterprise SQL Sandbox Console")
+    st.markdown("Type any standard SQLite query below to test the live schema tracking layers and press Execute.")
+    
+    user_sql = st.text_area("SQL Terminal Input Workspace", value="SELECT * FROM patients LIMIT 5;")
+    
+    if st.button("Execute Query ⚡"):
+        sanitized_query = user_sql.upper()
+        forbidden_keywords = ["DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "TRUNCATE"]
+        contains_forbidden = any(keyword in sanitized_query for keyword in forbidden_keywords)
+        
+        if contains_forbidden:
+            st.error("🚨 Security Exception: Data Modification Commands are disabled. This terminal is configuration locked to READ-ONLY (SELECT) operations.")
+        else:
+            try:
+                custom_df = pd.read_sql_query(user_sql, db_conn)
+                st.success("Query executed successfully!")
+                st.dataframe(custom_df, use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.error(f"SQL Syntax Error: {e}")
