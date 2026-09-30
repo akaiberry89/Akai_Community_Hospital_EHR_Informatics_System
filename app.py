@@ -497,7 +497,7 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                 del st.session_state.default_hl7
             st.rerun() 
 
-    # 2. Run the parsing logic down here in the main, wide part of the page!
+   # 2. Run the parsing logic down here in the main, wide part of the page!
     if parse_clicked:
         try:
             lines = user_hl7.strip().split('\n')
@@ -540,27 +540,50 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                         'DB Destination': 'orders.order_id',
                         'Validation': '✅ Valid'
                     })
+                    
+                    # --- DYNAMIC DATABASE LOOKUP FOR OBR-4 ---
+                    raw_loinc = fields[4]
+                    extracted_code = raw_loinc.split('^')[0] if '^' in raw_loinc else raw_loinc
+                    
+                    cursor = db_conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM loinc_map WHERE loinc_code = ?", (extracted_code,))
+                    if cursor.fetchone()[0] > 0:
+                        obr_validation = '✅ Valid (Matched)'
+                    else:
+                        obr_validation = f'❌ Error: {extracted_code} not in Master'
+                        
                     parsed_results.append({
                         'HL7 Position': 'OBR-4',
                         'Field Name': 'Test Code (LOINC)',
                         'Req': 'R',
-                        'Extracted Value': fields[4],
+                        'Extracted Value': raw_loinc,
                         'Data Type': 'CE',
                         'Transformation Applied': "Split by '^' (Extract Code)",
                         'DB Destination': 'lab_results.loinc_code',
-                        'Validation': '✅ Valid (Matched)'
+                        'Validation': obr_validation
                     })
                 
                 elif segment == 'OBX' and len(fields) > 5:
+                    # --- DYNAMIC DATABASE LOOKUP FOR OBX-3 ---
+                    raw_loinc = fields[3]
+                    extracted_code = raw_loinc.split('^')[0] if '^' in raw_loinc else raw_loinc
+                    
+                    cursor = db_conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM loinc_map WHERE loinc_code = ?", (extracted_code,))
+                    if cursor.fetchone()[0] > 0:
+                        obx_validation = '✅ Valid (Matched)'
+                    else:
+                        obx_validation = f'❌ Error: {extracted_code} not in Master'
+
                     parsed_results.append({
                         'HL7 Position': 'OBX-3',
                         'Field Name': 'Observation Identifier',
                         'Req': 'R',
-                        'Extracted Value': fields[3],
+                        'Extracted Value': raw_loinc,
                         'Data Type': 'CE',
                         'Transformation Applied': "Split by '^' (Extract Code)",
                         'DB Destination': 'loinc_map.loinc_code',
-                        'Validation': '✅ Valid'
+                        'Validation': obx_validation
                     })
                     parsed_results.append({
                         'HL7 Position': 'OBX-5',
@@ -575,13 +598,18 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
             
             if parsed_results:
                 parsed_df = pd.DataFrame(parsed_results)
-                st.success("✅ HL7 message parsed successfully!")
+                
+                # Check if any errors were found during validation
+                if parsed_df['Validation'].str.contains('❌').any():
+                    st.error("⚠️ HL7 message parsed, but validation errors were found. Message held in suspense queue.")
+                else:
+                    st.success("✅ HL7 message parsed and validated successfully!")
+                    
                 st.markdown("#### Extracted Field Mapping & Engine Logic")
                 st.dataframe(parsed_df, use_container_width=True, hide_index=True)
             else:
                 st.warning("No recognizable HL7 segments found in message.")
         except Exception as e:
-            st.error(f"❌ Parser Error: {str(e)}")
             st.error(f"❌ Parser Error: {str(e)}")
             
     
