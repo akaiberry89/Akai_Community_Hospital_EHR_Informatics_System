@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 import random
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -22,6 +23,9 @@ def init_portfolio_db(current_date):
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     cursor = conn.cursor()
     
+    # Establish local time baseline immediately for seed generation
+    now = datetime.now(ZoneInfo("America/Chicago"))
+    
     # Enable foreign keys inside the database engine
     cursor.execute("PRAGMA foreign_keys = ON;")
     
@@ -34,7 +38,7 @@ def init_portfolio_db(current_date):
           last_name TEXT,
           dob TEXT,
           sex TEXT CHECK (sex IN ('M', 'F', 'U')),
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+          created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
     ''')
     
@@ -44,7 +48,7 @@ def init_portfolio_db(current_date):
           username TEXT UNIQUE NOT NULL,
           display_name TEXT,
           role TEXT CHECK (role IN ('technician', 'clinician', 'admin')),
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+          created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
     ''')
     
@@ -56,7 +60,7 @@ def init_portfolio_db(current_date):
           department TEXT,
           order_datetime TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'ordered' CHECK (status IN ('ordered', 'active', 'received', 'completed', 'canceled')),
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+          created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
     ''')
     
@@ -70,7 +74,7 @@ def init_portfolio_db(current_date):
           received_datetime TEXT,
           accessioned_datetime TEXT,
           rejection_reason TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+          created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
     ''')
     
@@ -93,7 +97,7 @@ def init_portfolio_db(current_date):
           result_flag TEXT CHECK (result_flag IN ('normal', 'abnormal', 'critical')),
           result_datetime TEXT,
           reported_datetime TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+          created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
     ''')
     
@@ -104,7 +108,7 @@ def init_portfolio_db(current_date):
           object_type TEXT,
           object_id INT,
           action TEXT,
-          action_time TEXT DEFAULT CURRENT_TIMESTAMP,
+          action_time TEXT DEFAULT (datetime('now', 'localtime')),
           detail TEXT
         );
     ''')
@@ -112,7 +116,7 @@ def init_portfolio_db(current_date):
     cursor.execute('''
         CREATE TABLE error_logs (
           error_id INTEGER PRIMARY KEY AUTOINCREMENT,
-          timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+          timestamp TEXT DEFAULT (datetime('now', 'localtime')),
           segment_location TEXT,
           error_severity TEXT,
           clinical_description TEXT
@@ -164,11 +168,11 @@ def init_portfolio_db(current_date):
 
     cursor.execute("INSERT INTO users (username, display_name, role) VALUES ('sys_hl7_interface', 'HL7 Core Inbound Interface', 'admin');")
     
-    # SEED ERROR LOGS
+    # SEED ERROR LOGS (Using dynamic dates instead of hardcoded strings)
     error_log_data = [
-        ('2026-09-30 14:23:45', 'PID-3', 'Critical', 'Inbound message rejected: Missing required Patient Identifier (MRN) placeholder. Cannot map to patients.mrn.'),
-        ('2026-09-30 13:15:22', 'OBR-4', 'High', 'Validation fault: LOINC code "9999-9" is not in reference master. Accession ACC-100089 held pending reconciliation.'),
-        ('2026-09-30 12:07:38', 'OBX-5', 'Medium', 'Result value truncated: Expected numeric value, received text string "Pending". Stored as preliminary result.')
+        ((now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"), 'PID-3', 'Critical', 'Inbound message rejected: Missing required Patient Identifier (MRN) placeholder. Cannot map to patients.mrn.'),
+        ((now - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S"), 'OBR-4', 'High', 'Validation fault: LOINC code "9999-9" is not in reference master. Accession ACC-100089 held pending reconciliation.'),
+        ((now - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S"), 'OBX-5', 'Medium', 'Result value truncated: Expected numeric value, received text string "Pending". Stored as preliminary result.')
     ]
     cursor.executemany(
         "INSERT INTO error_logs (timestamp, segment_location, error_severity, clinical_description) VALUES (?, ?, ?, ?);",
@@ -188,8 +192,6 @@ def init_portfolio_db(current_date):
     fake = Faker()
 
     # --- TEMPORAL ENGINE INITIALIZATION ---
-    now = datetime.now()
-    
     # 1. Determine the baseline anchor (Find the start of the current week - Monday)
     days_since_monday = now.weekday()  # Monday = 0, Tuesday = 1, etc.
     start_of_week = now - timedelta(days=days_since_monday)
@@ -205,40 +207,31 @@ def init_portfolio_db(current_date):
 
     # --- SEEDING ENGINE TRACK ---
     # Distribute patients across the week (Monday through today)
-    # Each day gets patients distributed across 24 hours with realistic hospital hours (7 AM - 11 PM)
     
     for idx in range(1, patients_to_generate + 1):
-        # Determine which day this patient should be created on
-        day_offset = (idx - 1) % max(1, (days_since_monday + 1))  # Spread across days so far this week
+        day_offset = (idx - 1) % max(1, (days_since_monday + 1))  
         patient_day = start_of_week + timedelta(days=day_offset)
         
-        # Distribute within hospital hours (7 AM to 11 PM)
         hour_offset = random.randint(7, 22)
         minute_offset = random.randint(0, 59)
         patient_created_time = patient_day.replace(hour=hour_offset, minute=minute_offset, second=random.randint(0, 59))
         
-        # Ensure patient creation time is not in the future
         if patient_created_time > now:
             patient_created_time = now - timedelta(hours=random.randint(1, 6))
         
-        # Patient Data
         mrn = f"MRN{fake.unique.random_number(digits=8, fix_len=True)}"
         sex = random.choice(['M', 'F'])
         first = fake.first_name_male() if sex == 'M' else fake.first_name_female()
         last = fake.last_name()
         dob = fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y-%m-%d")
         
-        # 1. Calculate the order time by adding a random delay after the patient was created
         order_time = patient_created_time + timedelta(minutes=random.randint(15, 120))
 
-        # 2. ⚡ YOUR SAFETY CAP: If it accidentally calculates in the future, pull it back!
         if order_time > now:
             order_time = now - timedelta(minutes=random.randint(5, 30))
 
-        # 3. Convert it to a string so the database can read it cleanly
         order_time_str = order_time.strftime("%Y-%m-%d %H:%M:%S")
         
-        # Insert patient with explicit created_at timestamp
         cursor.execute("INSERT INTO patients (mrn, first_name, last_name, dob, sex, created_at) VALUES (?, ?, ?, ?, ?, ?);", 
                        (mrn, first, last, dob, sex, patient_created_time.strftime("%Y-%m-%d %H:%M:%S")))
         patient_id = cursor.lastrowid
@@ -249,11 +242,9 @@ def init_portfolio_db(current_date):
             dept = random.choice(departments)
             ord_status = random.choices(status_options, weights=status_weights, k=1)[0]
             
-            # Orders created after patient creation, but within the same day or next few hours
             hours_after_patient = random.randint(0, 12)
             order_time = patient_created_time + timedelta(hours=hours_after_patient)
             
-            # Make sure order doesn't go past current time
             if order_time > now:
                 order_time = now - timedelta(hours=random.randint(1, 6))
             
@@ -272,11 +263,10 @@ def init_portfolio_db(current_date):
             specimen_id = cursor.lastrowid
             
             if ord_status == 'completed':
-                loinc = random.choice(loinc_data)[0]  # Get the LOINC code
+                loinc = random.choice(loinc_data)[0]
                 res_flag = random.choice(flags)
                 res_val = f"{random.uniform(10.0, 150.0):.1f}" if res_flag == 'normal' else f"{random.uniform(151.0, 300.0):.1f}"
                 
-                # Result time is a bit after order
                 result_time = order_time + timedelta(hours=random.randint(1, 8))
                 if result_time > now:
                     result_time = now - timedelta(hours=random.randint(0, 3))
@@ -288,7 +278,7 @@ def init_portfolio_db(current_date):
     return conn
 
 # Connect to database instance
-today = datetime.now().date()
+today = datetime.now(ZoneInfo("America/Chicago")).date()
 db_conn = init_portfolio_db(today)
 
 # --- 3. DASHBOARD ARCHITECTURE ---
@@ -301,7 +291,7 @@ st.sidebar.header("🎛️ Laboratory Controls")
 st.sidebar.info("Use the main panel tabs to alternate between clinical registries and background security structures.")
 
 # Stack your new dynamic data telemetry
-st.sidebar.caption(f"📅 **System Local Clock:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.sidebar.caption(f"📅 **System Local Clock:** {datetime.now(ZoneInfo('America/Chicago')).strftime('%Y-%m-%d %H:%M:%S')}")
 st.sidebar.info(
     f"📡 **Operational Data Telemetry:** This portal simulates a live EHR inbound network stream. "
     f"The database scales dynamically based on the current day of the week "
@@ -353,7 +343,6 @@ with tab_specimens:
     st.markdown("### 🧪 specimens Tracking Table")
     st.markdown("Logs physical sample status, processing benchmarks, and automated rejection flags.")
     
-    # 📈 Added an executive bar chart to track rejection rules visually
     st.markdown("#### Turnaround Time Tracking by Specimen Type")
     chart_df = pd.read_sql_query("""
         SELECT s.specimen_type, COUNT(o.order_id) as total_volume
@@ -382,7 +371,6 @@ with tab_departments:
     st.markdown("### 🏢 Department Order Analytics")
     st.markdown("Departmental order volume, status breakdown, and test ordering patterns.")
     
-    # Overall department order volume
     st.markdown("#### 📊 Orders by Department")
     dept_volume = pd.read_sql_query("""
         SELECT department, COUNT(order_id) as total_orders
@@ -392,7 +380,6 @@ with tab_departments:
     """, db_conn)
     st.bar_chart(data=dept_volume, x="department", y="total_orders", color="#ff6b6b")
     
-    # Department order status breakdown
     st.markdown("#### 📈 Order Status by Department")
     dept_status = pd.read_sql_query("""
         SELECT department, status, COUNT(order_id) as count
@@ -402,7 +389,6 @@ with tab_departments:
     """, db_conn)
     st.dataframe(dept_status, use_container_width=True, hide_index=True)
     
-    # Test type by department
     st.markdown("#### 🧬 Specimen Types Ordered by Department")
     dept_specimens = pd.read_sql_query("""
         SELECT o.department, s.specimen_type, COUNT(s.specimen_id) as count
@@ -413,7 +399,6 @@ with tab_departments:
     """, db_conn)
     st.dataframe(dept_specimens, use_container_width=True, hide_index=True)
     
-    # Department summary table
     st.markdown("#### 📋 Detailed Department Summary")
     dept_summary = pd.read_sql_query("""
         SELECT 
@@ -440,7 +425,7 @@ with tab_hl7:
     st.markdown("Real-time HL7 v2.5 message ingestion, parsing, and validation framework.")
     
     # --- 1. DYNAMIC KPI SUMMARY ROW ---
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("America/Chicago"))
     days_since_monday = now.weekday()
     total_messages = 150 + (days_since_monday * 225)
     successful_ingestions = int(total_messages * 0.995)
@@ -455,7 +440,6 @@ with tab_hl7:
     # --- 2. LIVE PATIENT DATA SYNC & HL7 PARSER ---
     st.markdown("#### 🧬 HL7 ORU^R01 Parser & Mapping Simulator")
     
-    # Fetch most recent patient from database
     try:
         recent_patient = pd.read_sql_query(
             "SELECT mrn, first_name, last_name FROM patients ORDER BY created_at DESC LIMIT 1",
@@ -474,8 +458,7 @@ with tab_hl7:
         live_first = "John"
         live_last = "Doe"
     
-    # Generate sample HL7 message using live data
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y%m%d%H%M%S")
     sample_hl7 = f"""MSH|^~\\&|LAB_SYSTEM|ACME_HOSP|LIS|RECEIVING|{timestamp}||ORU^R01|MSG123456|P|2.5|
 PID|1||{live_mrn}||{live_last}^{live_first}|SMITH|19800515|M|||123 MAIN ST^^CITY^ST^12345||
 OBR|1|ORD789|ACC-100123|2345-7^GLUCOSE||{timestamp}|||||||||||||||F||
@@ -507,9 +490,7 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                 fields = line.split('|')
                 segment = fields[0]
                 
-                # Parse specific segments
                 if segment == 'PID' and len(fields) > 5:
-                    # PID-3: Patient Identifier (MRN)
                     parsed_results.append({
                         'HL7 Position': 'PID-3',
                         'Field Name': 'Patient Identifier (MRN)',
@@ -517,7 +498,6 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                         'Data Type': 'CX',
                         'DB Destination': 'patients.mrn'
                     })
-                    # PID-5: Patient Name
                     parsed_results.append({
                         'HL7 Position': 'PID-5',
                         'Field Name': 'Patient Name',
@@ -527,7 +507,6 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                     })
                 
                 elif segment == 'OBR' and len(fields) > 3:
-                    # OBR-2: Placer Order Number
                     parsed_results.append({
                         'HL7 Position': 'OBR-2',
                         'Field Name': 'Placer Order Number',
@@ -535,7 +514,6 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                         'Data Type': 'EI',
                         'DB Destination': 'orders.order_id'
                     })
-                    # OBR-4: Universal Service Identifier (Test Code)
                     parsed_results.append({
                         'HL7 Position': 'OBR-4',
                         'Field Name': 'Test Code (LOINC)',
@@ -545,7 +523,6 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                     })
                 
                 elif segment == 'OBX' and len(fields) > 5:
-                    # OBX-3: Observation Identifier
                     parsed_results.append({
                         'HL7 Position': 'OBX-3',
                         'Field Name': 'Observation Identifier',
@@ -553,7 +530,6 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
                         'Data Type': 'CE',
                         'DB Destination': 'loinc_map.loinc_code'
                     })
-                    # OBX-5: Observation Value
                     parsed_results.append({
                         'HL7 Position': 'OBX-5',
                         'Field Name': 'Result Value',
@@ -575,7 +551,6 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
     # --- 3. INTERFACE ERROR LOG TABLE ---
     st.markdown("#### ⚠️ Interface Error Feed")
     
-    # Query error_logs table from database
     error_df = pd.read_sql_query("SELECT error_id, timestamp, segment_location, error_severity, clinical_description FROM error_logs ORDER BY timestamp DESC", db_conn)
     
     if len(error_df) > 0:
