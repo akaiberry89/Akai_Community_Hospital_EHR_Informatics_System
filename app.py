@@ -637,7 +637,7 @@ with tab_query:
     st.markdown("### 💻 Enterprise SQL Sandbox Console")
     st.markdown("Type any standard SQLite query below to test the live schema tracking layers and press Execute.")
 
-with st.expander("📚 Database Schema Cheat Sheet (Data Dictionary)"):
+    with st.expander("📚 Database Schema Cheat Sheet (Data Dictionary)"):
         st.markdown("""
         * **`patients`**: `patient_id`, `mrn`, `first_name`, `last_name`, `dob`, `sex`
         * **`orders`**: `order_id`, `patient_id`, `ordering_provider`, `department`, `status`, `order_datetime`
