@@ -636,6 +636,15 @@ OBX|1|NM|2345-7^GLUCOSE^LN||95|mg/dL|70-99|N|||F"""
 with tab_query:
     st.markdown("### 💻 Enterprise SQL Sandbox Console")
     st.markdown("Type any standard SQLite query below to test the live schema tracking layers and press Execute.")
+
+with st.expander("📚 Database Schema Cheat Sheet (Data Dictionary)"):
+        st.markdown("""
+        * **`patients`**: `patient_id`, `mrn`, `first_name`, `last_name`, `dob`, `sex`
+        * **`orders`**: `order_id`, `patient_id`, `ordering_provider`, `department`, `status`, `order_datetime`
+        * **`specimens`**: `specimen_id`, `order_id`, `accession_number`, `specimen_type`, `rejection_reason`
+        * **`lab_results`**: `result_id`, `specimen_id`, `loinc_code`, `result_value`, `result_flag`, `status`
+        * **`loinc_map`**: `loinc_code`, `test_name`, `units`, `ref_range`
+        """)
     
     user_sql = st.text_area("SQL Terminal Input Workspace", value="SELECT * FROM patients LIMIT 5;")
     
